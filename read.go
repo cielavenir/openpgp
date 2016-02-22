@@ -163,7 +163,7 @@ FindKey:
 				if len(pk.encryptedKey.Key) == 0 {
 					continue
 				}
-				decrypted, err = se.Decrypt(pk.encryptedKey.CipherFunc, pk.encryptedKey.Key)
+				decrypted, err = se.Decrypt(pk.encryptedKey.Cipher, pk.encryptedKey.Key)
 				if err != nil && err != errors.ErrKeyIncorrect {
 					return nil, err
 				}

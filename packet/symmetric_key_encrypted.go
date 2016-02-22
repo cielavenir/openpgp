@@ -10,6 +10,7 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/s2k"
 )
@@ -21,7 +22,7 @@ const maxSessionKeySizeInBytes = 64
 // SymmetricKeyEncrypted represents a passphrase protected session key. See RFC
 // 4880, section 5.3.
 type SymmetricKeyEncrypted struct {
-	CipherFunc   CipherFunction
+	Cipher       algorithm.Cipher
 	s2k          func(out, in []byte)
 	encryptedKey []byte
 }
@@ -37,9 +38,9 @@ func (ske *SymmetricKeyEncrypted) parse(r io.Reader) error {
 	if buf[0] != symmetricKeyEncryptedVersion {
 		return errors.UnsupportedError("SymmetricKeyEncrypted version")
 	}
-	ske.CipherFunc = CipherFunction(buf[1])
 
-	if ske.CipherFunc.KeySize() == 0 {
+	var ok bool
+	if ske.Cipher, ok = algorithm.CipherById[buf[1]]; !ok {
 		return errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(buf[1])))
 	}
 
@@ -70,29 +71,31 @@ func (ske *SymmetricKeyEncrypted) parse(r io.Reader) error {
 // Decrypt attempts to decrypt an encrypted session key and returns the key and
 // the cipher to use when decrypting a subsequent Symmetrically Encrypted Data
 // packet.
-func (ske *SymmetricKeyEncrypted) Decrypt(passphrase []byte) ([]byte, CipherFunction, error) {
-	key := make([]byte, ske.CipherFunc.KeySize())
+func (ske *SymmetricKeyEncrypted) Decrypt(passphrase []byte) ([]byte, algorithm.Cipher, error) {
+	key := make([]byte, ske.Cipher.KeySize())
 	ske.s2k(key, passphrase)
 
 	if len(ske.encryptedKey) == 0 {
-		return key, ske.CipherFunc, nil
+		return key, ske.Cipher, nil
 	}
 
 	// the IV is all zeros
-	iv := make([]byte, ske.CipherFunc.blockSize())
-	c := cipher.NewCFBDecrypter(ske.CipherFunc.new(key), iv)
+	iv := make([]byte, ske.Cipher.BlockSize())
+	c := cipher.NewCFBDecrypter(ske.Cipher.New(key), iv)
 	plaintextKey := make([]byte, len(ske.encryptedKey))
 	c.XORKeyStream(plaintextKey, ske.encryptedKey)
-	cipherFunc := CipherFunction(plaintextKey[0])
-	if cipherFunc.blockSize() == 0 {
-		return nil, ske.CipherFunc, errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(cipherFunc)))
-	}
-	plaintextKey = plaintextKey[1:]
-	if l := len(plaintextKey); l == 0 || l%cipherFunc.blockSize() != 0 {
-		return nil, cipherFunc, errors.StructuralError("length of decrypted key not a multiple of block size")
+
+	cipher, ok := algorithm.CipherById[plaintextKey[0]]
+	if !ok {
+		return key, cipher, errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(plaintextKey[0])))
 	}
 
-	return plaintextKey, cipherFunc, nil
+	plaintextKey = plaintextKey[1:]
+	if l := len(plaintextKey); l == 0 || l%cipher.BlockSize() != 0 {
+		return nil, cipher, errors.StructuralError("length of decrypted key not a multiple of block size")
+	}
+
+	return plaintextKey, cipher, nil
 }
 
 // SerializeSymmetricKeyEncrypted serializes a symmetric key packet to w. The
@@ -101,11 +104,8 @@ func (ske *SymmetricKeyEncrypted) Decrypt(passphrase []byte) ([]byte, CipherFunc
 // SerializeSymmetricallyEncrypted.
 // If config is nil, sensible defaults will be used.
 func SerializeSymmetricKeyEncrypted(w io.Writer, passphrase []byte, config *Config) (key []byte, err error) {
-	cipherFunc := config.Cipher()
-	keySize := cipherFunc.KeySize()
-	if keySize == 0 {
-		return nil, errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(cipherFunc)))
-	}
+	cipherAlgo := config.Cipher()
+	keySize := cipherAlgo.KeySize()
 
 	s2kBuf := new(bytes.Buffer)
 	keyEncryptingKey := make([]byte, keySize)
@@ -125,7 +125,7 @@ func SerializeSymmetricKeyEncrypted(w io.Writer, passphrase []byte, config *Conf
 
 	var buf [2]byte
 	buf[0] = symmetricKeyEncryptedVersion
-	buf[1] = byte(cipherFunc)
+	buf[1] = byte(cipherAlgo.Id())
 	_, err = w.Write(buf[:])
 	if err != nil {
 		return
@@ -140,8 +140,8 @@ func SerializeSymmetricKeyEncrypted(w io.Writer, passphrase []byte, config *Conf
 	if err != nil {
 		return
 	}
-	iv := make([]byte, cipherFunc.blockSize())
-	c := cipher.NewCFBEncrypter(cipherFunc.new(keyEncryptingKey), iv)
+	iv := make([]byte, cipherAlgo.BlockSize())
+	c := cipher.NewCFBEncrypter(cipherAlgo.New(keyEncryptingKey), iv)
 	encryptedCipherAndKey := make([]byte, keySize+1)
 	c.XORKeyStream(encryptedCipherAndKey, buf[1:])
 	c.XORKeyStream(encryptedCipherAndKey[1:], sessionKey)

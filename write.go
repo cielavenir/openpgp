@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/armor"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/packet"
@@ -186,10 +187,10 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 	}
 
 	// These are the possible ciphers that we'll use for the message.
-	candidateCiphers := []uint8{
-		uint8(packet.CipherAES128),
-		uint8(packet.CipherAES256),
-		uint8(packet.CipherCAST5),
+	candidateCiphers := algorithm.CipherSlice{
+		algorithm.AES128,
+		algorithm.AES256,
+		algorithm.CAST5,
 	}
 	// These are the possible hash functions that we'll use for the signature.
 	candidateHashes := []uint8{
@@ -222,7 +223,7 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 		if len(preferredHashes) == 0 {
 			preferredHashes = defaultHashes
 		}
-		candidateCiphers = intersectPreferences(candidateCiphers, preferredSymmetric)
+		candidateCiphers = candidateCiphers.Intersect(preferredSymmetric)
 		candidateHashes = intersectPreferences(candidateHashes, preferredHashes)
 	}
 
@@ -230,13 +231,12 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 		return nil, errors.InvalidArgumentError("cannot encrypt because recipient set shares no common algorithms")
 	}
 
-	cipher := packet.CipherFunction(candidateCiphers[0])
+	algo := candidateCiphers[0]
 	// If the cipher specifed by config is a candidate, we'll use that.
 	configuredCipher := config.Cipher()
 	for _, c := range candidateCiphers {
-		cipherFunc := packet.CipherFunction(c)
-		if cipherFunc == configuredCipher {
-			cipher = cipherFunc
+		if c.Id() == configuredCipher.Id() {
+			algo = c
 			break
 		}
 	}
@@ -268,18 +268,18 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 		return nil, errors.InvalidArgumentError("cannot encrypt because no candidate hash functions are compiled in. (Wanted " + name + " in this case.)")
 	}
 
-	symKey := make([]byte, cipher.KeySize())
+	symKey := make([]byte, algo.KeySize())
 	if _, err := io.ReadFull(config.Random(), symKey); err != nil {
 		return nil, err
 	}
 
 	for _, key := range encryptKeys {
-		if err := packet.SerializeEncryptedKey(ciphertext, key.PublicKey, cipher, symKey, config); err != nil {
+		if err := packet.SerializeEncryptedKey(ciphertext, key.PublicKey, algo, symKey, config); err != nil {
 			return nil, err
 		}
 	}
 
-	encryptedData, err := packet.SerializeSymmetricallyEncrypted(ciphertext, cipher, symKey, config)
+	encryptedData, err := packet.SerializeSymmetricallyEncrypted(ciphertext, algo, symKey, config)
 	if err != nil {
 		return
 	}

@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"strconv"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/elgamal"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
@@ -21,10 +22,10 @@ const encryptedKeyVersion = 3
 // EncryptedKey represents a public-key encrypted session key. See RFC 4880,
 // section 5.1.
 type EncryptedKey struct {
-	KeyId      uint64
-	Algo       PublicKeyAlgorithm
-	CipherFunc CipherFunction // only valid after a successful Decrypt
-	Key        []byte         // only valid after a successful Decrypt
+	KeyId  uint64
+	Algo   PublicKeyAlgorithm
+	Cipher algorithm.Cipher // only valid after a successful Decrypt
+	Key    []byte           // only valid after a successful Decrypt
 
 	encryptedMPI1, encryptedMPI2 encoding.Field
 }
@@ -93,7 +94,11 @@ func (e *EncryptedKey) Decrypt(priv *PrivateKey, config *Config) error {
 		return err
 	}
 
-	e.CipherFunc = CipherFunction(b[0])
+	var ok bool
+	if e.Cipher, ok = algorithm.CipherById[b[0]]; !ok {
+		return errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(b[0])))
+	}
+
 	e.Key = b[1 : len(b)-2]
 	expectedChecksum := uint16(b[len(b)-2])<<8 | uint16(b[len(b)-1])
 	checksum := checksumKeyMaterial(e.Key)
@@ -142,14 +147,14 @@ func (e *EncryptedKey) Serialize(w io.Writer) error {
 // SerializeEncryptedKey serializes an encrypted key packet to w that contains
 // key, encrypted to pub.
 // If config is nil, sensible defaults will be used.
-func SerializeEncryptedKey(w io.Writer, pub *PublicKey, cipherFunc CipherFunction, key []byte, config *Config) error {
+func SerializeEncryptedKey(w io.Writer, pub *PublicKey, cipher algorithm.Cipher, key []byte, config *Config) error {
 	var buf [10]byte
 	buf[0] = encryptedKeyVersion
 	binary.BigEndian.PutUint64(buf[1:9], pub.KeyId)
 	buf[9] = byte(pub.PubKeyAlgo)
 
 	keyBlock := make([]byte, 1 /* cipher type */ +len(key)+2 /* checksum */)
-	keyBlock[0] = byte(cipherFunc)
+	keyBlock[0] = byte(cipher.Id())
 	copy(keyBlock[1:], key)
 	checksum := checksumKeyMaterial(key)
 	keyBlock[1+len(key)] = byte(checksum >> 8)
