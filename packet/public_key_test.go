@@ -101,11 +101,11 @@ func TestEcc384Serialize(t *testing.T) {
 			t.Error(err)
 		}
 		pubkey := p.(*PublicKey)
-		if !bytes.Equal(pubkey.ec.oid, []byte{0x2b, 0x81, 0x04, 0x00, 0x22}) {
+		if !bytes.Equal(pubkey.ec.oid.Bytes(), []byte{0x2b, 0x81, 0x04, 0x00, 0x22}) {
 			t.Errorf("Unexpected pubkey OID: %x", pubkey.ec.oid)
 		}
-		if !bytes.Equal(pubkey.ec.p.bytes[:5], []byte{0x04, 0xf6, 0xb8, 0xc5, 0xac}) {
-			t.Errorf("Unexpected pubkey P[:5]: %x", pubkey.ec.p.bytes)
+		if !bytes.Equal(pubkey.ec.p.Bytes()[:5], []byte{0x04, 0xf6, 0xb8, 0xc5, 0xac}) {
+			t.Errorf("Unexpected pubkey P[:5]: %x", pubkey.ec.p.Bytes())
 		}
 		if pubkey.KeyId != 0x098033880F54719F {
 			t.Errorf("Unexpected pubkey ID: %x", pubkey.KeyId)
@@ -147,11 +147,11 @@ func TestEcc384Serialize(t *testing.T) {
 			t.Error(err)
 		}
 		subkey := p.(*PublicKey)
-		if !bytes.Equal(subkey.ec.oid, []byte{0x2b, 0x81, 0x04, 0x00, 0x22}) {
+		if !bytes.Equal(subkey.ec.oid.Bytes(), []byte{0x2b, 0x81, 0x04, 0x00, 0x22}) {
 			t.Errorf("Unexpected subkey OID: %x", subkey.ec.oid)
 		}
-		if !bytes.Equal(subkey.ec.p.bytes[:5], []byte{0x04, 0x2f, 0xaa, 0x84, 0x02}) {
-			t.Errorf("Unexpected subkey P[:5]: %x", subkey.ec.p.bytes)
+		if !bytes.Equal(subkey.ec.p.Bytes()[:5], []byte{0x04, 0x2f, 0xaa, 0x84, 0x02}) {
+			t.Errorf("Unexpected subkey P[:5]: %x", subkey.ec.p.Bytes())
 		}
 		if subkey.ecdh.KdfHash != 0x09 {
 			t.Error("Expected KDF hash function SHA384 (0x09), got", subkey.ecdh.KdfHash)
