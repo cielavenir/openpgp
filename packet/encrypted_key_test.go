@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+
+	"github.com/benburkert/openpgp/algorithm"
 )
 
 func bigFromBase10(s string) *big.Int {
@@ -64,7 +66,7 @@ func TestDecryptingEncryptedKey(t *testing.T) {
 		return
 	}
 
-	if ek.CipherFunc != CipherAES256 {
+	if ek.Cipher.Id() != algorithm.AES256.Id() {
 		t.Errorf("unexpected EncryptedKey contents: %#v", ek)
 		return
 	}
@@ -87,7 +89,7 @@ func TestEncryptingEncryptedKey(t *testing.T) {
 	}
 
 	buf := new(bytes.Buffer)
-	err := SerializeEncryptedKey(buf, pub, CipherAES128, key, nil)
+	err := SerializeEncryptedKey(buf, pub, algorithm.AES128, key, nil)
 	if err != nil {
 		t.Errorf("error writing encrypted key packet: %s", err)
 	}
@@ -114,7 +116,7 @@ func TestEncryptingEncryptedKey(t *testing.T) {
 		return
 	}
 
-	if ek.CipherFunc != CipherAES128 {
+	if ek.Cipher.Id() != algorithm.AES128.Id() {
 		t.Errorf("unexpected EncryptedKey contents: %#v", ek)
 		return
 	}

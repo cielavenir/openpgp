@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/elgamal"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
@@ -28,7 +29,7 @@ type PrivateKey struct {
 	PublicKey
 	Encrypted     bool // if true then the private key is unavailable until Decrypt has been called.
 	encryptedData []byte
-	cipher        CipherFunction
+	cipher        algorithm.Cipher
 	s2k           func(out, in []byte)
 	PrivateKey    interface{} // An *rsa.PrivateKey or *dsa.PrivateKey.
 	sha1Checksum  bool
@@ -78,7 +79,12 @@ func (pk *PrivateKey) parse(r io.Reader) (err error) {
 		if err != nil {
 			return
 		}
-		pk.cipher = CipherFunction(buf[0])
+
+		var ok bool
+		if pk.cipher, ok = algorithm.CipherById[buf[0]]; !ok {
+			return errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(buf[0])))
+		}
+
 		pk.Encrypted = true
 		pk.s2k, err = s2k.Parse(r)
 		if err != nil {
@@ -92,9 +98,9 @@ func (pk *PrivateKey) parse(r io.Reader) (err error) {
 	}
 
 	if pk.Encrypted {
-		blockSize := pk.cipher.blockSize()
+		blockSize := pk.cipher.BlockSize()
 		if blockSize == 0 {
-			return errors.UnsupportedError("unsupported cipher in private key: " + strconv.Itoa(int(pk.cipher)))
+			return errors.UnsupportedError("unsupported cipher in private key: " + strconv.Itoa(int(pk.cipher.Id())))
 		}
 		pk.iv = make([]byte, blockSize)
 		_, err = readFull(r, pk.iv)
@@ -208,7 +214,7 @@ func (pk *PrivateKey) Decrypt(passphrase []byte) error {
 
 	key := make([]byte, pk.cipher.KeySize())
 	pk.s2k(key, passphrase)
-	block := pk.cipher.new(key)
+	block := pk.cipher.New(key)
 	cfb := cipher.NewCFBDecrypter(block, pk.iv)
 
 	data := make([]byte, len(pk.encryptedData))

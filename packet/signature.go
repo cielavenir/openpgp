@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/s2k"
@@ -51,10 +52,11 @@ type Signature struct {
 	// The following are optional so are nil when not included in the
 	// signature.
 
-	SigLifetimeSecs, KeyLifetimeSecs                        *uint32
-	PreferredSymmetric, PreferredHash, PreferredCompression []uint8
-	IssuerKeyId                                             *uint64
-	IsPrimaryId                                             *bool
+	SigLifetimeSecs, KeyLifetimeSecs    *uint32
+	PreferredSymmetric                  algorithm.CipherSlice
+	PreferredHash, PreferredCompression []uint8
+	IssuerKeyId                         *uint64
+	IsPrimaryId                         *bool
 
 	// FlagsValid is set if any flags were given. See RFC 4880, section
 	// 5.2.3.21 for details.
@@ -293,8 +295,10 @@ func parseSignatureSubpacket(sig *Signature, subpacket []byte, isHashed bool) (r
 		if !isHashed {
 			return
 		}
-		sig.PreferredSymmetric = make([]byte, len(subpacket))
-		copy(sig.PreferredSymmetric, subpacket)
+		sig.PreferredSymmetric = make(algorithm.CipherSlice, len(subpacket))
+		for i, id := range subpacket {
+			sig.PreferredSymmetric[i] = algorithm.CipherById[id]
+		}
 	case issuerSubpacket:
 		// Issuer, section 5.2.3.5
 		if len(subpacket) != 8 {
@@ -698,7 +702,7 @@ func (sig *Signature) buildSubpackets() (subpackets []outputSubpacket) {
 	}
 
 	if len(sig.PreferredSymmetric) > 0 {
-		subpackets = append(subpackets, outputSubpacket{true, prefSymmetricAlgosSubpacket, false, sig.PreferredSymmetric})
+		subpackets = append(subpackets, outputSubpacket{true, prefSymmetricAlgosSubpacket, false, sig.PreferredSymmetric.Ids()})
 	}
 
 	if len(sig.PreferredHash) > 0 {

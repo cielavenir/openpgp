@@ -9,6 +9,8 @@ import (
 	"crypto/rand"
 	"io"
 	"time"
+
+	"github.com/benburkert/openpgp/algorithm"
 )
 
 // Config collects a number of parameters along with sensible defaults.
@@ -22,7 +24,7 @@ type Config struct {
 	DefaultHash crypto.Hash
 	// DefaultCipher is the cipher to be used.
 	// If zero, AES-128 is used.
-	DefaultCipher CipherFunction
+	DefaultCipher algorithm.Cipher
 	// Time returns the current time as the number of seconds since the
 	// epoch. If Time is nil, time.Now is used.
 	Time func() time.Time
@@ -62,9 +64,9 @@ func (c *Config) Hash() crypto.Hash {
 	return c.DefaultHash
 }
 
-func (c *Config) Cipher() CipherFunction {
-	if c == nil || uint8(c.DefaultCipher) == 0 {
-		return CipherAES128
+func (c *Config) Cipher() algorithm.Cipher {
+	if c == nil {
+		return algorithm.AES128
 	}
 	return c.DefaultCipher
 }

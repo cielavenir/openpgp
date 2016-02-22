@@ -12,6 +12,7 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/errors"
 )
 
@@ -45,22 +46,22 @@ func (se *SymmetricallyEncrypted) parse(r io.Reader) error {
 // Decrypt returns a ReadCloser, from which the decrypted contents of the
 // packet can be read. An incorrect key can, with high probability, be detected
 // immediately and this will result in a KeyIncorrect error being returned.
-func (se *SymmetricallyEncrypted) Decrypt(c CipherFunction, key []byte) (io.ReadCloser, error) {
+func (se *SymmetricallyEncrypted) Decrypt(c algorithm.Cipher, key []byte) (io.ReadCloser, error) {
 	keySize := c.KeySize()
 	if keySize == 0 {
-		return nil, errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(c)))
+		return nil, errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(c.Id())))
 	}
 	if len(key) != keySize {
 		return nil, errors.InvalidArgumentError("SymmetricallyEncrypted: incorrect key length")
 	}
 
 	if se.prefix == nil {
-		se.prefix = make([]byte, c.blockSize()+2)
+		se.prefix = make([]byte, c.BlockSize()+2)
 		_, err := readFull(se.contents, se.prefix)
 		if err != nil {
 			return nil, err
 		}
-	} else if len(se.prefix) != c.blockSize()+2 {
+	} else if len(se.prefix) != c.BlockSize()+2 {
 		return nil, errors.InvalidArgumentError("can't try ciphers with different block lengths")
 	}
 
@@ -70,7 +71,7 @@ func (se *SymmetricallyEncrypted) Decrypt(c CipherFunction, key []byte) (io.Read
 		ocfbResync = OCFBNoResync
 	}
 
-	s := NewOCFBDecrypter(c.new(key), se.prefix, ocfbResync)
+	s := NewOCFBDecrypter(c.New(key), se.prefix, ocfbResync)
 	if s == nil {
 		return nil, errors.ErrKeyIncorrect
 	}
@@ -254,7 +255,7 @@ func (c noOpCloser) Close() error {
 // to w and returns a WriteCloser to which the to-be-encrypted packets can be
 // written.
 // If config is nil, sensible defaults will be used.
-func SerializeSymmetricallyEncrypted(w io.Writer, c CipherFunction, key []byte, config *Config) (contents io.WriteCloser, err error) {
+func SerializeSymmetricallyEncrypted(w io.Writer, c algorithm.Cipher, key []byte, config *Config) (contents io.WriteCloser, err error) {
 	if c.KeySize() != len(key) {
 		return nil, errors.InvalidArgumentError("SymmetricallyEncrypted.Serialize: bad key length")
 	}
@@ -269,7 +270,7 @@ func SerializeSymmetricallyEncrypted(w io.Writer, c CipherFunction, key []byte, 
 		return
 	}
 
-	block := c.new(key)
+	block := c.New(key)
 	blockSize := block.BlockSize()
 	iv := make([]byte, blockSize)
 	_, err = config.Random().Read(iv)

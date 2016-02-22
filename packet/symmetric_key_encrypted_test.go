@@ -10,6 +10,8 @@ import (
 	"io"
 	"io/ioutil"
 	"testing"
+
+	"github.com/benburkert/openpgp/algorithm"
 )
 
 func TestSymmetricKeyEncrypted(t *testing.T) {
@@ -24,7 +26,7 @@ func TestSymmetricKeyEncrypted(t *testing.T) {
 		t.Error("didn't find SymmetricKeyEncrypted packet")
 		return
 	}
-	key, cipherFunc, err := ske.Decrypt([]byte("password"))
+	key, cipher, err := ske.Decrypt([]byte("password"))
 	if err != nil {
 		t.Error(err)
 		return
@@ -40,7 +42,7 @@ func TestSymmetricKeyEncrypted(t *testing.T) {
 		t.Error("didn't find SymmetricallyEncrypted packet")
 		return
 	}
-	r, err := se.Decrypt(cipherFunc, key)
+	r, err := se.Decrypt(cipher, key)
 	if err != nil {
 		t.Error(err)
 		return
@@ -64,9 +66,9 @@ const symmetricallyEncryptedContentsHex = "cb1062004d14c4df636f6e74656e74732e0a"
 func TestSerializeSymmetricKeyEncrypted(t *testing.T) {
 	buf := bytes.NewBuffer(nil)
 	passphrase := []byte("testing")
-	const cipherFunc = CipherAES128
+	const cipher = algorithm.AES128
 	config := &Config{
-		DefaultCipher: cipherFunc,
+		DefaultCipher: cipher,
 	}
 
 	key, err := SerializeSymmetricKeyEncrypted(buf, passphrase, config)
@@ -86,10 +88,10 @@ func TestSerializeSymmetricKeyEncrypted(t *testing.T) {
 		return
 	}
 
-	if ske.CipherFunc != config.DefaultCipher {
-		t.Errorf("SKE cipher function is %d (expected %d)", ske.CipherFunc, config.DefaultCipher)
+	if ske.Cipher.Id() != config.DefaultCipher.Id() {
+		t.Errorf("SKE cipher function is %d (expected %d)", ske.Cipher, config.DefaultCipher)
 	}
-	parsedKey, parsedCipherFunc, err := ske.Decrypt(passphrase)
+	parsedKey, parsedCipher, err := ske.Decrypt(passphrase)
 	if err != nil {
 		t.Errorf("failed to decrypt reparsed SKE: %s", err)
 		return
@@ -97,7 +99,7 @@ func TestSerializeSymmetricKeyEncrypted(t *testing.T) {
 	if !bytes.Equal(key, parsedKey) {
 		t.Errorf("keys don't match after Decrypt: %x (original) vs %x (parsed)", key, parsedKey)
 	}
-	if parsedCipherFunc != cipherFunc {
-		t.Errorf("cipher function doesn't match after Decrypt: %d (original) vs %d (parsed)", cipherFunc, parsedCipherFunc)
+	if parsedCipher.Id() != cipher.Id() {
+		t.Errorf("cipher function doesn't match after Decrypt: %d (original) vs %d (parsed)", cipher, parsedCipher)
 	}
 }
