@@ -506,6 +506,45 @@ func (pk publicKey) ParsePublicKey(r io.Reader) (crypto.PublicKey, []encoding.Fi
 		}
 
 		return ecdsa, []encoding.Field{oid, p}, nil
+	case ECDH:
+		oid := new(encoding.BitString)
+		if _, err := oid.ReadFrom(r); err != nil {
+			return nil, nil, err
+		}
+
+		p := new(encoding.MPI)
+		if _, err := p.ReadFrom(r); err != nil {
+			return nil, nil, err
+		}
+
+		kdf := new(encoding.BitString)
+		if _, err := kdf.ReadFrom(r); err != nil {
+			return nil, nil, err
+		}
+
+		var c elliptic.Curve
+		if bytes.Equal(oid.Bytes(), oidCurveP256) {
+			c = elliptic.P256()
+		} else if bytes.Equal(oid.Bytes(), oidCurveP384) {
+			c = elliptic.P384()
+		} else if bytes.Equal(oid.Bytes(), oidCurveP521) {
+			c = elliptic.P521()
+		} else {
+			return nil, nil, errors.UnsupportedError(fmt.Sprintf("unsupported oid: %x", oid))
+		}
+
+		x, y := elliptic.Unmarshal(c, p.Bytes())
+		if x == nil {
+			return nil, nil, errors.UnsupportedError("failed to parse EC point")
+		}
+
+		ecdsa := &ecdsa.PublicKey{
+			Curve: c,
+			X:     x,
+			Y:     y,
+		}
+
+		return ecdsa, []encoding.Field{oid, p, kdf}, nil
 	default:
 		return nil, nil, errors.UnsupportedError("public key type: " + strconv.Itoa(int(pk)))
 	}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/armor"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/packet"
@@ -494,7 +495,7 @@ func NewEntity(name, comment, email string, config *packet.Config) (*Entity, err
 		SelfSignature: &packet.Signature{
 			CreationTime: currentTime,
 			SigType:      packet.SigTypePositiveCert,
-			PubKeyAlgo:   packet.PubKeyAlgoRSA,
+			PubKeyAlgo:   algorithm.RSA,
 			Hash:         config.Hash(),
 			IsPrimaryId:  &isPrimaryId,
 			FlagsValid:   true,
@@ -511,7 +512,7 @@ func NewEntity(name, comment, email string, config *packet.Config) (*Entity, err
 		Sig: &packet.Signature{
 			CreationTime:              currentTime,
 			SigType:                   packet.SigTypeSubkeyBinding,
-			PubKeyAlgo:                packet.PubKeyAlgoRSA,
+			PubKeyAlgo:                algorithm.RSA,
 			Hash:                      config.Hash(),
 			FlagsValid:                true,
 			FlagEncryptStorage:        true,

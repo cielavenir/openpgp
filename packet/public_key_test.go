@@ -9,20 +9,23 @@ import (
 	"encoding/hex"
 	"testing"
 	"time"
+
+	"github.com/benburkert/openpgp/algorithm"
+	"github.com/benburkert/openpgp/encoding"
 )
 
 var pubKeyTests = []struct {
 	hexData        string
 	hexFingerprint string
 	creationTime   time.Time
-	pubKeyAlgo     PublicKeyAlgorithm
+	pubKeyAlgo     algorithm.PublicKey
 	keyId          uint64
 	keyIdString    string
 	keyIdShort     string
 }{
-	{rsaPkDataHex, rsaFingerprintHex, time.Unix(0x4d3c5c10, 0), PubKeyAlgoRSA, 0xa34d7e18c20c31bb, "A34D7E18C20C31BB", "C20C31BB"},
-	{dsaPkDataHex, dsaFingerprintHex, time.Unix(0x4d432f89, 0), PubKeyAlgoDSA, 0x8e8fbe54062f19ed, "8E8FBE54062F19ED", "062F19ED"},
-	{ecdsaPkDataHex, ecdsaFingerprintHex, time.Unix(0x5071c294, 0), PubKeyAlgoECDSA, 0x43fe956c542ca00b, "43FE956C542CA00B", "542CA00B"},
+	{rsaPkDataHex, rsaFingerprintHex, time.Unix(0x4d3c5c10, 0), algorithm.RSA, 0xa34d7e18c20c31bb, "A34D7E18C20C31BB", "C20C31BB"},
+	{dsaPkDataHex, dsaFingerprintHex, time.Unix(0x4d432f89, 0), algorithm.DSA, 0x8e8fbe54062f19ed, "8E8FBE54062F19ED", "062F19ED"},
+	{ecdsaPkDataHex, ecdsaFingerprintHex, time.Unix(0x5071c294, 0), algorithm.ECDSA, 0x43fe956c542ca00b, "43FE956C542CA00B", "542CA00B"},
 }
 
 func TestPublicKeyRead(t *testing.T) {
@@ -37,7 +40,7 @@ func TestPublicKeyRead(t *testing.T) {
 			t.Errorf("#%d: failed to parse, got: %#v", i, packet)
 			continue
 		}
-		if pk.PubKeyAlgo != test.pubKeyAlgo {
+		if pk.PubKeyAlgo.Id() != test.pubKeyAlgo.Id() {
 			t.Errorf("#%d: bad public key algorithm got:%x want:%x", i, pk.PubKeyAlgo, test.pubKeyAlgo)
 		}
 		if !pk.CreationTime.Equal(test.creationTime) {
@@ -96,16 +99,18 @@ func TestEcc384Serialize(t *testing.T) {
 	var w bytes.Buffer
 	for i := 0; i < 2; i++ {
 		// Public key
-		p, err := Read(r)
+		pk, err := Read(r)
 		if err != nil {
 			t.Error(err)
 		}
-		pubkey := p.(*PublicKey)
-		if !bytes.Equal(pubkey.oid.Bytes(), []byte{0x2b, 0x81, 0x04, 0x00, 0x22}) {
-			t.Errorf("Unexpected pubkey OID: %x", pubkey.oid.Bytes())
+		pubkey := pk.(*PublicKey)
+		oid := pubkey.fields[0].(*encoding.BitString)
+		p := pubkey.fields[1].(*encoding.MPI)
+		if !bytes.Equal(oid.Bytes(), []byte{0x2b, 0x81, 0x04, 0x00, 0x22}) {
+			t.Errorf("Unexpected pubkey OID: %x", oid.Bytes())
 		}
-		if !bytes.Equal(pubkey.p.Bytes()[:5], []byte{0x04, 0xf6, 0xb8, 0xc5, 0xac}) {
-			t.Errorf("Unexpected pubkey P[:5]: %x", pubkey.p.Bytes())
+		if !bytes.Equal(p.Bytes()[:5], []byte{0x04, 0xf6, 0xb8, 0xc5, 0xac}) {
+			t.Errorf("Unexpected pubkey P[:5]: %x", p.Bytes())
 		}
 		if pubkey.KeyId != 0x098033880F54719F {
 			t.Errorf("Unexpected pubkey ID: %x", pubkey.KeyId)
@@ -115,11 +120,11 @@ func TestEcc384Serialize(t *testing.T) {
 			t.Error(err)
 		}
 		// User ID
-		p, err = Read(r)
+		pk, err = Read(r)
 		if err != nil {
 			t.Error(err)
 		}
-		uid := p.(*UserId)
+		uid := pk.(*UserId)
 		if uid.Id != "ec_dsa_dh_384 <openpgp@brainhub.org>" {
 			t.Error("Unexpected UID:", uid.Id)
 		}
@@ -128,11 +133,11 @@ func TestEcc384Serialize(t *testing.T) {
 			t.Error(err)
 		}
 		// User ID Sig
-		p, err = Read(r)
+		pk, err = Read(r)
 		if err != nil {
 			t.Error(err)
 		}
-		uidSig := p.(*Signature)
+		uidSig := pk.(*Signature)
 		err = pubkey.VerifyUserIdSignature(uid.Id, pubkey, uidSig)
 		if err != nil {
 			t.Error(err, ": UID")
@@ -142,22 +147,25 @@ func TestEcc384Serialize(t *testing.T) {
 			t.Error(err)
 		}
 		// Subkey
-		p, err = Read(r)
+		pk, err = Read(r)
 		if err != nil {
 			t.Error(err)
 		}
-		subkey := p.(*PublicKey)
-		if !bytes.Equal(subkey.oid.Bytes(), []byte{0x2b, 0x81, 0x04, 0x00, 0x22}) {
-			t.Errorf("Unexpected subkey OID: %x", subkey.oid.Bytes())
+		subkey := pk.(*PublicKey)
+		oid = subkey.fields[0].(*encoding.BitString)
+		p = subkey.fields[1].(*encoding.MPI)
+		kdf := subkey.fields[2].(*encoding.BitString)
+		if !bytes.Equal(oid.Bytes(), []byte{0x2b, 0x81, 0x04, 0x00, 0x22}) {
+			t.Errorf("Unexpected subkey OID: %x", oid.Bytes())
 		}
-		if !bytes.Equal(subkey.p.Bytes()[:5], []byte{0x04, 0x2f, 0xaa, 0x84, 0x02}) {
-			t.Errorf("Unexpected subkey P[:5]: %x", subkey.p.Bytes())
+		if !bytes.Equal(p.Bytes()[:5], []byte{0x04, 0x2f, 0xaa, 0x84, 0x02}) {
+			t.Errorf("Unexpected subkey P[:5]: %x", p.Bytes())
 		}
-		if subkey.kdfHash != 0x09 {
-			t.Error("Expected KDF hash function SHA384 (0x09), got", subkey.kdfHash)
+		if kdfHash := kdf.Bytes()[1]; kdfHash != 0x09 {
+			t.Error("Expected KDF hash function SHA384 (0x09), got", kdfHash)
 		}
-		if subkey.kdfAlgo != 0x09 {
-			t.Error("Expected KDF symmetric alg AES256 (0x09), got", subkey.kdfAlgo)
+		if kdfAlgo := kdf.Bytes()[2]; kdfAlgo != 0x09 {
+			t.Error("Expected KDF symmetric alg AES256 (0x09), got", kdfAlgo)
 		}
 		if subkey.KeyId != 0xAA8B938F9A201946 {
 			t.Errorf("Unexpected subkey ID: %x", subkey.KeyId)
@@ -167,11 +175,11 @@ func TestEcc384Serialize(t *testing.T) {
 			t.Error(err)
 		}
 		// Subkey Sig
-		p, err = Read(r)
+		pk, err = Read(r)
 		if err != nil {
 			t.Error(err)
 		}
-		subkeySig := p.(*Signature)
+		subkeySig := pk.(*Signature)
 		err = pubkey.VerifyKeySignature(subkey, subkeySig)
 		if err != nil {
 			t.Error(err)

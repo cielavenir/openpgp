@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/s2k"
@@ -25,7 +26,7 @@ type SignatureV3 struct {
 	SigType      SignatureType
 	CreationTime time.Time
 	IssuerKeyId  uint64
-	PubKeyAlgo   PublicKeyAlgorithm
+	PubKeyAlgo   algorithm.PublicKey
 	Hash         crypto.Hash
 	HashTag      [2]byte
 
@@ -70,14 +71,13 @@ func (sig *SignatureV3) parse(r io.Reader) (err error) {
 	if _, err = readFull(r, buf[:2]); err != nil {
 		return
 	}
-	sig.PubKeyAlgo = PublicKeyAlgorithm(buf[0])
-	switch sig.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly, PubKeyAlgoDSA:
-	default:
-		err = errors.UnsupportedError("public key algorithm " + strconv.Itoa(int(sig.PubKeyAlgo)))
+
+	var ok bool
+	if sig.PubKeyAlgo, ok = algorithm.PublicKeyById[buf[0]]; !ok {
+		err = errors.UnsupportedError("public key algorithm " + strconv.Itoa(int(buf[0])))
 		return
 	}
-	var ok bool
+
 	if sig.Hash, ok = s2k.HashIdToHash(buf[1]); !ok {
 		return errors.UnsupportedError("hash function " + strconv.Itoa(int(buf[2])))
 	}
@@ -88,10 +88,10 @@ func (sig *SignatureV3) parse(r io.Reader) (err error) {
 	}
 
 	switch sig.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly:
+	case algorithm.RSA, algorithm.RSASignOnly:
 		sig.RSASignature = new(encoding.MPI)
 		_, err = sig.RSASignature.ReadFrom(r)
-	case PubKeyAlgoDSA:
+	case algorithm.DSA:
 		sig.DSASigR = new(encoding.MPI)
 		if _, err = sig.DSASigR.ReadFrom(r); err != nil {
 			return
@@ -124,7 +124,7 @@ func (sig *SignatureV3) Serialize(w io.Writer) (err error) {
 	}
 
 	// Write public key algorithm, hash ID, and hash value
-	buf[0] = byte(sig.PubKeyAlgo)
+	buf[0] = byte(sig.PubKeyAlgo.Id())
 	hashId, ok := s2k.HashToHashId(sig.Hash)
 	if !ok {
 		return errors.UnsupportedError(fmt.Sprintf("hash function %v", sig.Hash))
@@ -140,9 +140,9 @@ func (sig *SignatureV3) Serialize(w io.Writer) (err error) {
 	}
 
 	switch sig.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly:
+	case algorithm.RSA, algorithm.RSASignOnly:
 		_, err = sig.RSASignature.WriteTo(w)
-	case PubKeyAlgoDSA:
+	case algorithm.DSA:
 		if _, err = sig.DSASigR.WriteTo(w); err != nil {
 			return
 		}

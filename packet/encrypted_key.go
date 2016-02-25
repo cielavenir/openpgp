@@ -5,14 +5,11 @@
 package packet
 
 import (
-	"crypto/rsa"
 	"encoding/binary"
 	"io"
-	"math/big"
 	"strconv"
 
 	"github.com/benburkert/openpgp/algorithm"
-	"github.com/benburkert/openpgp/elgamal"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
 )
@@ -23,11 +20,11 @@ const encryptedKeyVersion = 3
 // section 5.1.
 type EncryptedKey struct {
 	KeyId  uint64
-	Algo   PublicKeyAlgorithm
+	Algo   algorithm.PublicKey
 	Cipher algorithm.Cipher // only valid after a successful Decrypt
 	Key    []byte           // only valid after a successful Decrypt
 
-	encryptedMPI1, encryptedMPI2 encoding.Field
+	fields []encoding.Field
 }
 
 func (e *EncryptedKey) parse(r io.Reader) (err error) {
@@ -40,24 +37,15 @@ func (e *EncryptedKey) parse(r io.Reader) (err error) {
 		return errors.UnsupportedError("unknown EncryptedKey version " + strconv.Itoa(int(buf[0])))
 	}
 	e.KeyId = binary.BigEndian.Uint64(buf[1:9])
-	e.Algo = PublicKeyAlgorithm(buf[9])
-	switch e.Algo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly:
-		e.encryptedMPI1 = new(encoding.MPI)
-		if _, err = e.encryptedMPI1.ReadFrom(r); err != nil {
-			return
-		}
-	case PubKeyAlgoElGamal:
-		e.encryptedMPI1 = new(encoding.MPI)
-		if _, err = e.encryptedMPI1.ReadFrom(r); err != nil {
-			return
-		}
 
-		e.encryptedMPI2 = new(encoding.MPI)
-		if _, err = e.encryptedMPI2.ReadFrom(r); err != nil {
-			return
-		}
+	var ok bool
+	if e.Algo, ok = algorithm.PublicKeyById[buf[9]]; !ok {
+		return errors.UnsupportedError("unknown PublicKey algorithm " + strconv.Itoa(int(buf[9])))
 	}
+	if e.fields, err = e.Algo.ParseEncryptedKey(r); err != nil {
+		return err
+	}
+
 	_, err = consumeAll(r)
 	return
 }
@@ -74,22 +62,9 @@ func checksumKeyMaterial(key []byte) uint16 {
 // private key must have been decrypted first.
 // If config is nil, sensible defaults will be used.
 func (e *EncryptedKey) Decrypt(priv *PrivateKey, config *Config) error {
-	var err error
-	var b []byte
-
 	// TODO(agl): use session key decryption routines here to avoid
 	// padding oracle attacks.
-	switch priv.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly:
-		b, err = rsa.DecryptPKCS1v15(config.Random(), priv.PrivateKey.(*rsa.PrivateKey), e.encryptedMPI1.Bytes())
-	case PubKeyAlgoElGamal:
-		c1 := new(big.Int).SetBytes(e.encryptedMPI1.Bytes())
-		c2 := new(big.Int).SetBytes(e.encryptedMPI2.Bytes())
-		b, err = elgamal.Decrypt(priv.PrivateKey.(*elgamal.PrivateKey), c1, c2)
-	default:
-		err = errors.InvalidArgumentError("cannot decrypted encrypted session key with private key of type " + strconv.Itoa(int(priv.PubKeyAlgo)))
-	}
-
+	b, err := priv.PubKeyAlgo.Decrypt(config.Random(), priv.PrivateKey, e.fields)
 	if err != nil {
 		return err
 	}
@@ -111,37 +86,13 @@ func (e *EncryptedKey) Decrypt(priv *PrivateKey, config *Config) error {
 
 // Serialize writes the encrypted key packet, e, to w.
 func (e *EncryptedKey) Serialize(w io.Writer) error {
-	var mpiLen int
-	switch e.Algo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly:
-		mpiLen = int(e.encryptedMPI1.EncodedLength())
-	case PubKeyAlgoElGamal:
-		mpiLen = int(e.encryptedMPI1.EncodedLength()) + int(e.encryptedMPI2.EncodedLength())
-	default:
-		return errors.InvalidArgumentError("don't know how to serialize encrypted key type " + strconv.Itoa(int(e.Algo)))
-	}
-
-	serializeHeader(w, packetTypeEncryptedKey, 1 /* version */ +8 /* key id */ +1 /* algo */ +mpiLen)
+	serializeHeader(w, packetTypeEncryptedKey, 1 /* version */ +8 /* key id */ +1 /* algo */ +encodedLength(e.fields))
 
 	w.Write([]byte{encryptedKeyVersion})
 	binary.Write(w, binary.BigEndian, e.KeyId)
-	w.Write([]byte{byte(e.Algo)})
+	w.Write([]byte{byte(e.Algo.Id())})
 
-	switch e.Algo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly:
-		_, err := e.encryptedMPI1.WriteTo(w)
-		return err
-	case PubKeyAlgoElGamal:
-		if _, err := e.encryptedMPI1.WriteTo(w); err != nil {
-			return err
-		}
-		_, err := e.encryptedMPI2.WriteTo(w)
-		return err
-	default:
-		panic("internal error")
-	}
-
-	return nil
+	return writeFields(w, e.fields)
 }
 
 // SerializeEncryptedKey serializes an encrypted key packet to w that contains
@@ -151,7 +102,7 @@ func SerializeEncryptedKey(w io.Writer, pub *PublicKey, cipher algorithm.Cipher,
 	var buf [10]byte
 	buf[0] = encryptedKeyVersion
 	binary.BigEndian.PutUint64(buf[1:9], pub.KeyId)
-	buf[9] = byte(pub.PubKeyAlgo)
+	buf[9] = byte(pub.PubKeyAlgo.Id())
 
 	keyBlock := make([]byte, 1 /* cipher type */ +len(key)+2 /* checksum */)
 	keyBlock[0] = byte(cipher.Id())
@@ -160,59 +111,17 @@ func SerializeEncryptedKey(w io.Writer, pub *PublicKey, cipher algorithm.Cipher,
 	keyBlock[1+len(key)] = byte(checksum >> 8)
 	keyBlock[1+len(key)+1] = byte(checksum)
 
-	switch pub.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly:
-		return serializeEncryptedKeyRSA(w, config.Random(), buf, pub.PublicKey.(*rsa.PublicKey), keyBlock)
-	case PubKeyAlgoElGamal:
-		return serializeEncryptedKeyElGamal(w, config.Random(), buf, pub.PublicKey.(*elgamal.PublicKey), keyBlock)
-	case PubKeyAlgoDSA, PubKeyAlgoRSASignOnly:
-		return errors.InvalidArgumentError("cannot encrypt to public key of type " + strconv.Itoa(int(pub.PubKeyAlgo)))
-	}
-
-	return errors.UnsupportedError("encrypting a key to public key of type " + strconv.Itoa(int(pub.PubKeyAlgo)))
-}
-
-func serializeEncryptedKeyRSA(w io.Writer, rand io.Reader, header [10]byte, pub *rsa.PublicKey, keyBlock []byte) error {
-	cipherText, err := rsa.EncryptPKCS1v15(rand, pub, keyBlock)
-	if err != nil {
-		return errors.InvalidArgumentError("RSA encryption failed: " + err.Error())
-	}
-
-	packetLen := 10 /* header length */ + 2 /* mpi size */ + len(cipherText)
-
-	err = serializeHeader(w, packetTypeEncryptedKey, packetLen)
+	keyFields, err := pub.PubKeyAlgo.Encrypt(config.Random(), pub.PublicKey, keyBlock)
 	if err != nil {
 		return err
 	}
-	_, err = w.Write(header[:])
-	if err != nil {
-		return err
-	}
-	_, err = encoding.NewMPI(cipherText).WriteTo(w)
-	return err
-}
 
-func serializeEncryptedKeyElGamal(w io.Writer, rand io.Reader, header [10]byte, pub *elgamal.PublicKey, keyBlock []byte) error {
-	c1, c2, err := elgamal.Encrypt(rand, pub, keyBlock)
-	if err != nil {
-		return errors.InvalidArgumentError("ElGamal encryption failed: " + err.Error())
-	}
-
-	packetLen := 10 /* header length */
-	packetLen += 2 /* mpi size */ + (c1.BitLen()+7)/8
-	packetLen += 2 /* mpi size */ + (c2.BitLen()+7)/8
-
-	err = serializeHeader(w, packetTypeEncryptedKey, packetLen)
-	if err != nil {
+	packetLen := 10 /* header length */ + encodedLength(keyFields)
+	if err = serializeHeader(w, packetTypeEncryptedKey, packetLen); err != nil {
 		return err
 	}
-	_, err = w.Write(header[:])
-	if err != nil {
+	if _, err = w.Write(buf[:]); err != nil {
 		return err
 	}
-	if _, err = new(encoding.MPI).SetBig(c1).WriteTo(w); err != nil {
-		return err
-	}
-	_, err = new(encoding.MPI).SetBig(c2).WriteTo(w)
-	return err
+	return writeFields(w, keyFields)
 }

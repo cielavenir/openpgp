@@ -35,7 +35,7 @@ var encryptedKeyRSAPriv = &rsa.PrivateKey{
 
 var encryptedKeyPriv = &PrivateKey{
 	PublicKey: PublicKey{
-		PubKeyAlgo: PubKeyAlgoRSA,
+		PubKeyAlgo: algorithm.RSA,
 	},
 	PrivateKey: encryptedKeyRSAPriv,
 }
@@ -55,7 +55,7 @@ func TestDecryptingEncryptedKey(t *testing.T) {
 		return
 	}
 
-	if ek.KeyId != 0x2a67d68660df41c7 || ek.Algo != PubKeyAlgoRSA {
+	if ek.KeyId != 0x2a67d68660df41c7 || ek.Algo != algorithm.RSA {
 		t.Errorf("unexpected EncryptedKey contents: %#v", ek)
 		return
 	}
@@ -85,7 +85,7 @@ func TestEncryptingEncryptedKey(t *testing.T) {
 	pub := &PublicKey{
 		PublicKey:  &encryptedKeyPub,
 		KeyId:      keyId,
-		PubKeyAlgo: PubKeyAlgoRSAEncryptOnly,
+		PubKeyAlgo: algorithm.RSAEncryptOnly,
 	}
 
 	buf := new(bytes.Buffer)
@@ -105,7 +105,7 @@ func TestEncryptingEncryptedKey(t *testing.T) {
 		return
 	}
 
-	if ek.KeyId != keyId || ek.Algo != PubKeyAlgoRSAEncryptOnly {
+	if ek.KeyId != keyId || ek.Algo != algorithm.RSAEncryptOnly {
 		t.Errorf("unexpected EncryptedKey contents: %#v", ek)
 		return
 	}

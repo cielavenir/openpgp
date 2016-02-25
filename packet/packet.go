@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"io"
 
+	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
 )
 
@@ -394,42 +395,6 @@ const (
 	SigTypeSubkeyRevocation                = 0x28
 )
 
-// PublicKeyAlgorithm represents the different public key system specified for
-// OpenPGP. See
-// http://www.iana.org/assignments/pgp-parameters/pgp-parameters.xhtml#pgp-parameters-12
-type PublicKeyAlgorithm uint8
-
-const (
-	PubKeyAlgoRSA            PublicKeyAlgorithm = 1
-	PubKeyAlgoRSAEncryptOnly PublicKeyAlgorithm = 2
-	PubKeyAlgoRSASignOnly    PublicKeyAlgorithm = 3
-	PubKeyAlgoElGamal        PublicKeyAlgorithm = 16
-	PubKeyAlgoDSA            PublicKeyAlgorithm = 17
-	// RFC 6637, Section 5.
-	PubKeyAlgoECDH  PublicKeyAlgorithm = 18
-	PubKeyAlgoECDSA PublicKeyAlgorithm = 19
-)
-
-// CanEncrypt returns true if it's possible to encrypt a message to a public
-// key of the given type.
-func (pka PublicKeyAlgorithm) CanEncrypt() bool {
-	switch pka {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly, PubKeyAlgoElGamal:
-		return true
-	}
-	return false
-}
-
-// CanSign returns true if it's possible for a public key of the given type to
-// sign a message.
-func (pka PublicKeyAlgorithm) CanSign() bool {
-	switch pka {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly, PubKeyAlgoDSA, PubKeyAlgoECDSA:
-		return true
-	}
-	return false
-}
-
 // CompressionAlgo Represents the different compression algorithms
 // supported by OpenPGP (except for BZIP2, which is not currently
 // supported). See Section 9.3 of RFC 4880.
@@ -440,3 +405,19 @@ const (
 	CompressionZIP  CompressionAlgo = 1
 	CompressionZLIB CompressionAlgo = 2
 )
+
+func encodedLength(fields []encoding.Field) (length int) {
+	for _, field := range fields {
+		length += int(field.EncodedLength())
+	}
+	return
+}
+
+func writeFields(w io.Writer, fields []encoding.Field) error {
+	for _, field := range fields {
+		if _, err := field.WriteTo(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}

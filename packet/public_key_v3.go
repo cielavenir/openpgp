@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
 )
@@ -27,7 +28,7 @@ import (
 type PublicKeyV3 struct {
 	CreationTime time.Time
 	DaysToExpire uint16
-	PubKeyAlgo   PublicKeyAlgorithm
+	PubKeyAlgo   algorithm.PublicKey
 	PublicKey    *rsa.PublicKey
 	Fingerprint  [16]byte
 	KeyId        uint64
@@ -62,12 +63,17 @@ func (pk *PublicKeyV3) parse(r io.Reader) (err error) {
 	}
 	pk.CreationTime = time.Unix(int64(uint32(buf[1])<<24|uint32(buf[2])<<16|uint32(buf[3])<<8|uint32(buf[4])), 0)
 	pk.DaysToExpire = binary.BigEndian.Uint16(buf[5:7])
-	pk.PubKeyAlgo = PublicKeyAlgorithm(buf[7])
+
+	var ok bool
+	if pk.PubKeyAlgo, ok = algorithm.PublicKeyById[buf[7]]; !ok {
+		return errors.UnsupportedError("public key algorithm " + strconv.Itoa(int(buf[7])))
+	}
+
 	switch pk.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly, PubKeyAlgoRSASignOnly:
+	case algorithm.RSA, algorithm.RSAEncryptOnly, algorithm.RSASignOnly:
 		err = pk.parseRSA(r)
 	default:
-		err = errors.UnsupportedError("public key type: " + strconv.Itoa(int(pk.PubKeyAlgo)))
+		err = errors.UnsupportedError("public key type: " + strconv.Itoa(int(pk.PubKeyAlgo.Id())))
 	}
 	if err != nil {
 		return
@@ -122,7 +128,7 @@ func (pk *PublicKeyV3) parseRSA(r io.Reader) (err error) {
 func (pk *PublicKeyV3) SerializeSignaturePrefix(w io.Writer) {
 	var pLength uint16
 	switch pk.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly, PubKeyAlgoRSASignOnly:
+	case algorithm.RSA, algorithm.RSAEncryptOnly, algorithm.RSASignOnly:
 		pLength += pk.n.EncodedLength()
 		pLength += pk.e.EncodedLength()
 	default:
@@ -137,7 +143,7 @@ func (pk *PublicKeyV3) Serialize(w io.Writer) (err error) {
 	length := 8 // 8 byte header
 
 	switch pk.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly, PubKeyAlgoRSASignOnly:
+	case algorithm.RSA, algorithm.RSAEncryptOnly, algorithm.RSASignOnly:
 		length += int(pk.n.EncodedLength())
 		length += int(pk.e.EncodedLength())
 	default:
@@ -170,14 +176,14 @@ func (pk *PublicKeyV3) serializeWithoutHeaders(w io.Writer) (err error) {
 	buf[5] = byte(pk.DaysToExpire >> 8)
 	buf[6] = byte(pk.DaysToExpire)
 	// Public key algorithm
-	buf[7] = byte(pk.PubKeyAlgo)
+	buf[7] = byte(pk.PubKeyAlgo.Id())
 
 	if _, err = w.Write(buf[:]); err != nil {
 		return
 	}
 
 	switch pk.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly, PubKeyAlgoRSASignOnly:
+	case algorithm.RSA, algorithm.RSAEncryptOnly, algorithm.RSASignOnly:
 		if _, err = pk.n.WriteTo(w); err != nil {
 			return
 		}
@@ -189,7 +195,7 @@ func (pk *PublicKeyV3) serializeWithoutHeaders(w io.Writer) (err error) {
 
 // CanSign returns true iff this public key can generate signatures
 func (pk *PublicKeyV3) CanSign() bool {
-	return pk.PubKeyAlgo != PubKeyAlgoRSAEncryptOnly
+	return pk.PubKeyAlgo.CanSign()
 }
 
 // VerifySignatureV3 returns nil iff sig is a valid signature, made by this
@@ -209,12 +215,12 @@ func (pk *PublicKeyV3) VerifySignatureV3(signed hash.Hash, sig *SignatureV3) (er
 		return errors.SignatureError("hash tag doesn't match")
 	}
 
-	if pk.PubKeyAlgo != sig.PubKeyAlgo {
+	if pk.PubKeyAlgo.Id() != sig.PubKeyAlgo.Id() {
 		return errors.InvalidArgumentError("public key and signature use different algorithms")
 	}
 
 	switch pk.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly:
+	case algorithm.RSA, algorithm.RSASignOnly:
 		if err = rsa.VerifyPKCS1v15(pk.PublicKey, sig.Hash, hashBytes, sig.RSASignature.Bytes()); err != nil {
 			return errors.SignatureError("RSA verification failure")
 		}
@@ -278,7 +284,7 @@ func (pk *PublicKeyV3) KeyIdShortString() string {
 // BitLength returns the bit length for the given public key.
 func (pk *PublicKeyV3) BitLength() (bitLength uint16, err error) {
 	switch pk.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSAEncryptOnly, PubKeyAlgoRSASignOnly:
+	case algorithm.RSA, algorithm.RSAEncryptOnly, algorithm.RSASignOnly:
 		bitLength = pk.n.BitLength()
 	default:
 		err = errors.InvalidArgumentError("bad public-key algorithm")

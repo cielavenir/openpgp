@@ -7,9 +7,6 @@ package packet
 import (
 	"bytes"
 	"crypto"
-	"crypto/dsa"
-	"crypto/ecdsa"
-	"crypto/rsa"
 	"encoding/binary"
 	"hash"
 	"io"
@@ -33,7 +30,7 @@ const (
 // Signature represents a signature. See RFC 4880, section 5.2.
 type Signature struct {
 	SigType    SignatureType
-	PubKeyAlgo PublicKeyAlgorithm
+	PubKeyAlgo algorithm.PublicKey
 	Hash       crypto.Hash
 
 	// HashSuffix is extra data that is hashed in after the signed data.
@@ -43,9 +40,7 @@ type Signature struct {
 	HashTag      [2]byte
 	CreationTime time.Time
 
-	RSASignature         encoding.Field
-	DSASigR, DSASigS     encoding.Field
-	ECDSASigR, ECDSASigS encoding.Field
+	fields []encoding.Field
 
 	// rawSubpackets contains the unparsed subpackets, in order.
 	rawSubpackets []outputSubpacket
@@ -98,15 +93,13 @@ func (sig *Signature) parse(r io.Reader) (err error) {
 		return
 	}
 	sig.SigType = SignatureType(buf[0])
-	sig.PubKeyAlgo = PublicKeyAlgorithm(buf[1])
-	switch sig.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly, PubKeyAlgoDSA, PubKeyAlgoECDSA:
-	default:
-		err = errors.UnsupportedError("public key algorithm " + strconv.Itoa(int(sig.PubKeyAlgo)))
-		return
-	}
 
 	var ok bool
+	sig.PubKeyAlgo, ok = algorithm.PublicKeyById[buf[1]]
+	if !ok || !sig.PubKeyAlgo.CanSign() {
+		return errors.UnsupportedError("public key algorithm " + strconv.Itoa(int(buf[1])))
+	}
+
 	sig.Hash, ok = s2k.HashIdToHash(buf[2])
 	if !ok {
 		return errors.UnsupportedError("hash function " + strconv.Itoa(int(buf[2])))
@@ -156,29 +149,7 @@ func (sig *Signature) parse(r io.Reader) (err error) {
 		return
 	}
 
-	switch sig.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly:
-		sig.RSASignature = new(encoding.MPI)
-		_, err = sig.RSASignature.ReadFrom(r)
-	case PubKeyAlgoDSA:
-		sig.DSASigR = new(encoding.MPI)
-		if _, err = sig.DSASigR.ReadFrom(r); err != nil {
-			return
-		}
-
-		sig.DSASigS = new(encoding.MPI)
-		_, err = sig.DSASigS.ReadFrom(r)
-	case PubKeyAlgoECDSA:
-		sig.ECDSASigR = new(encoding.MPI)
-		if _, err = sig.ECDSASigR.ReadFrom(r); err != nil {
-			return
-		}
-
-		sig.ECDSASigS = new(encoding.MPI)
-		_, err = sig.ECDSASigS.ReadFrom(r)
-	default:
-		panic("unreachable")
-	}
+	sig.fields, err = sig.PubKeyAlgo.ParseSignature(r)
 	return
 }
 
@@ -484,7 +455,7 @@ func (sig *Signature) buildHashSuffix() (err error) {
 	sig.HashSuffix = make([]byte, l+6)
 	sig.HashSuffix[0] = 4
 	sig.HashSuffix[1] = uint8(sig.SigType)
-	sig.HashSuffix[2] = uint8(sig.PubKeyAlgo)
+	sig.HashSuffix[2] = uint8(sig.PubKeyAlgo.Id())
 	sig.HashSuffix[3], ok = s2k.HashToHashId(sig.Hash)
 	if !ok {
 		sig.HashSuffix = nil
@@ -526,35 +497,7 @@ func (sig *Signature) Sign(h hash.Hash, priv *PrivateKey, config *Config) (err e
 		return
 	}
 
-	switch priv.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly:
-		sigdata, err := rsa.SignPKCS1v15(config.Random(), priv.PrivateKey.(*rsa.PrivateKey), sig.Hash, digest)
-		if err == nil {
-			sig.RSASignature = encoding.NewMPI(sigdata)
-		}
-	case PubKeyAlgoDSA:
-		dsaPriv := priv.PrivateKey.(*dsa.PrivateKey)
-
-		// Need to truncate hashBytes to match FIPS 186-3 section 4.6.
-		subgroupSize := (dsaPriv.Q.BitLen() + 7) / 8
-		if len(digest) > subgroupSize {
-			digest = digest[:subgroupSize]
-		}
-		r, s, err := dsa.Sign(config.Random(), dsaPriv, digest)
-		if err == nil {
-			sig.DSASigR = new(encoding.MPI).SetBig(r)
-			sig.DSASigS = new(encoding.MPI).SetBig(s)
-		}
-	case PubKeyAlgoECDSA:
-		r, s, err := ecdsa.Sign(config.Random(), priv.PrivateKey.(*ecdsa.PrivateKey), digest)
-		if err == nil {
-			sig.ECDSASigR = new(encoding.MPI).SetBig(r)
-			sig.ECDSASigS = new(encoding.MPI).SetBig(s)
-		}
-	default:
-		err = errors.UnsupportedError("public key algorithm: " + strconv.Itoa(int(sig.PubKeyAlgo)))
-	}
-
+	sig.fields, err = priv.PubKeyAlgo.Sign(config.Random(), priv.PrivateKey, sig.Hash, digest)
 	return
 }
 
@@ -587,23 +530,11 @@ func (sig *Signature) Serialize(w io.Writer) (err error) {
 	if len(sig.outSubpackets) == 0 {
 		sig.outSubpackets = sig.rawSubpackets
 	}
-	if sig.RSASignature == nil && sig.DSASigR == nil && sig.ECDSASigR == nil {
+	if len(sig.fields) == 0 {
 		return errors.InvalidArgumentError("Signature: need to call Sign, SignUserId or SignKey before Serialize")
 	}
 
-	sigLength := 0
-	switch sig.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly:
-		sigLength = int(sig.RSASignature.EncodedLength())
-	case PubKeyAlgoDSA:
-		sigLength = int(sig.DSASigR.EncodedLength())
-		sigLength += int(sig.DSASigS.EncodedLength())
-	case PubKeyAlgoECDSA:
-		sigLength = int(sig.ECDSASigR.EncodedLength())
-		sigLength += int(sig.ECDSASigS.EncodedLength())
-	default:
-		panic("impossible")
-	}
+	sigLength := encodedLength(sig.fields)
 
 	unhashedSubpacketsLen := subpacketsLength(sig.outSubpackets, false)
 	length := len(sig.HashSuffix) - 6 /* trailer not included */ +
@@ -633,23 +564,7 @@ func (sig *Signature) Serialize(w io.Writer) (err error) {
 		return
 	}
 
-	switch sig.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly:
-		_, err = sig.RSASignature.WriteTo(w)
-	case PubKeyAlgoDSA:
-		if _, err = sig.DSASigR.WriteTo(w); err != nil {
-			return
-		}
-		_, err = sig.DSASigS.WriteTo(w)
-	case PubKeyAlgoECDSA:
-		if _, err = sig.ECDSASigR.WriteTo(w); err != nil {
-			return
-		}
-		_, err = sig.ECDSASigS.WriteTo(w)
-	default:
-		panic("impossible")
-	}
-	return
+	return writeFields(w, sig.fields)
 }
 
 // outputSubpacket represents a subpacket to be marshaled.

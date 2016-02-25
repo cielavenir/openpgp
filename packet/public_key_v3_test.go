@@ -9,19 +9,21 @@ import (
 	"encoding/hex"
 	"testing"
 	"time"
+
+	"github.com/benburkert/openpgp/algorithm"
 )
 
 var pubKeyV3Test = struct {
 	hexFingerprint string
 	creationTime   time.Time
-	pubKeyAlgo     PublicKeyAlgorithm
+	pubKeyAlgo     algorithm.PublicKey
 	keyId          uint64
 	keyIdString    string
 	keyIdShort     string
 }{
 	"103BECF5BD1E837C89D19E98487767F7",
 	time.Unix(779753634, 0),
-	PubKeyAlgoRSA,
+	algorithm.RSA,
 	0xDE0F188A5DA5E3C9,
 	"DE0F188A5DA5E3C9",
 	"5DA5E3C9"}
@@ -36,7 +38,7 @@ func TestPublicKeyV3Read(t *testing.T) {
 	if !ok {
 		t.Fatalf("#%d: failed to parse, got: %#v", i, packet)
 	}
-	if pk.PubKeyAlgo != test.pubKeyAlgo {
+	if pk.PubKeyAlgo.Id() != test.pubKeyAlgo.Id() {
 		t.Errorf("#%d: bad public key algorithm got:%x want:%x", i, pk.PubKeyAlgo, test.pubKeyAlgo)
 	}
 	if !pk.CreationTime.Equal(test.creationTime) {

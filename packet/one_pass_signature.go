@@ -10,6 +10,7 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/s2k"
 )
@@ -19,7 +20,7 @@ import (
 type OnePassSignature struct {
 	SigType    SignatureType
 	Hash       crypto.Hash
-	PubKeyAlgo PublicKeyAlgorithm
+	PubKeyAlgo algorithm.PublicKey
 	KeyId      uint64
 	IsLast     bool
 }
@@ -44,7 +45,11 @@ func (ops *OnePassSignature) parse(r io.Reader) (err error) {
 	}
 
 	ops.SigType = SignatureType(buf[1])
-	ops.PubKeyAlgo = PublicKeyAlgorithm(buf[3])
+
+	if ops.PubKeyAlgo, ok = algorithm.PublicKeyById[buf[3]]; !ok {
+		return errors.UnsupportedError("public key algorithm " + strconv.Itoa(int(buf[3])))
+	}
+
 	ops.KeyId = binary.BigEndian.Uint64(buf[4:12])
 	ops.IsLast = buf[12] != 0
 	return
@@ -60,7 +65,7 @@ func (ops *OnePassSignature) Serialize(w io.Writer) error {
 	if !ok {
 		return errors.UnsupportedError("hash type: " + strconv.Itoa(int(ops.Hash)))
 	}
-	buf[3] = uint8(ops.PubKeyAlgo)
+	buf[3] = uint8(ops.PubKeyAlgo.Id())
 	binary.BigEndian.PutUint64(buf[4:12], ops.KeyId)
 	if ops.IsLast {
 		buf[12] = 1
