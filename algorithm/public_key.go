@@ -359,6 +359,18 @@ func (pk publicKey) ParsePrivateKey(data []byte, pub crypto.PublicKey) (crypto.P
 
 		egPriv.X = new(big.Int).SetBytes(x.Bytes())
 		return egPriv, nil
+	case ECDSA:
+		ecdsaPub := pub.(*ecdsa.PublicKey)
+		ecdsaPriv := new(ecdsa.PrivateKey)
+		ecdsaPriv.PublicKey = *ecdsaPub
+
+		d := new(encoding.MPI)
+		if _, err := d.ReadFrom(buf); err != nil {
+			return nil, err
+		}
+
+		ecdsaPriv.D = new(big.Int).SetBytes(d.Bytes())
+		return ecdsaPriv, nil
 	}
 	panic("impossible")
 }
