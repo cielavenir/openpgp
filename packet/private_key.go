@@ -12,13 +12,11 @@ import (
 	"crypto/sha1"
 	"io"
 	"io/ioutil"
-	"math/big"
 	"strconv"
 	"time"
 
 	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/elgamal"
-	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/s2k"
 )
@@ -139,17 +137,7 @@ func (pk *PrivateKey) Serialize(w io.Writer) (err error) {
 	buf.WriteByte(0 /* no encryption */)
 
 	privateKeyBuf := bytes.NewBuffer(nil)
-
-	switch priv := pk.PrivateKey.(type) {
-	case *rsa.PrivateKey:
-		err = serializeRSAPrivateKey(privateKeyBuf, priv)
-	case *dsa.PrivateKey:
-		err = serializeDSAPrivateKey(privateKeyBuf, priv)
-	case *elgamal.PrivateKey:
-		err = serializeElGamalPrivateKey(privateKeyBuf, priv)
-	default:
-		err = errors.InvalidArgumentError("unknown private key type")
-	}
+	err = pk.PublicKey.PubKeyAlgo.SerializePrivateKey(privateKeyBuf, pk.PrivateKey)
 	if err != nil {
 		return
 	}
@@ -180,30 +168,6 @@ func (pk *PrivateKey) Serialize(w io.Writer) (err error) {
 	_, err = w.Write(checksumBytes[:])
 
 	return
-}
-
-func serializeRSAPrivateKey(w io.Writer, priv *rsa.PrivateKey) error {
-	if _, err := new(encoding.MPI).SetBig(priv.D).WriteTo(w); err != nil {
-		return err
-	}
-	if _, err := new(encoding.MPI).SetBig(priv.Primes[1]).WriteTo(w); err != nil {
-		return err
-	}
-	if _, err := new(encoding.MPI).SetBig(priv.Primes[0]).WriteTo(w); err != nil {
-		return err
-	}
-	_, err := new(encoding.MPI).SetBig(priv.Precomputed.Qinv).WriteTo(w)
-	return err
-}
-
-func serializeDSAPrivateKey(w io.Writer, priv *dsa.PrivateKey) error {
-	_, err := new(encoding.MPI).SetBig(priv.X).WriteTo(w)
-	return err
-}
-
-func serializeElGamalPrivateKey(w io.Writer, priv *elgamal.PrivateKey) error {
-	_, err := new(encoding.MPI).SetBig(priv.X).WriteTo(w)
-	return err
 }
 
 // Decrypt decrypts an encrypted private key using a passphrase.
@@ -250,85 +214,10 @@ func (pk *PrivateKey) Decrypt(passphrase []byte) error {
 }
 
 func (pk *PrivateKey) parsePrivateKey(data []byte) (err error) {
-	switch pk.PublicKey.PubKeyAlgo {
-	case PubKeyAlgoRSA, PubKeyAlgoRSASignOnly, PubKeyAlgoRSAEncryptOnly:
-		return pk.parseRSAPrivateKey(data)
-	case PubKeyAlgoDSA:
-		return pk.parseDSAPrivateKey(data)
-	case PubKeyAlgoElGamal:
-		return pk.parseElGamalPrivateKey(data)
-	}
-	panic("impossible")
-}
-
-func (pk *PrivateKey) parseRSAPrivateKey(data []byte) (err error) {
-	rsaPub := pk.PublicKey.PublicKey.(*rsa.PublicKey)
-	rsaPriv := new(rsa.PrivateKey)
-	rsaPriv.PublicKey = *rsaPub
-
-	buf := bytes.NewBuffer(data)
-	d := new(encoding.MPI)
-	if _, err := d.ReadFrom(buf); err != nil {
+	if pk.PrivateKey, err = pk.PubKeyAlgo.ParsePrivateKey(data, pk.PublicKey.PublicKey); err != nil {
 		return err
 	}
 
-	p := new(encoding.MPI)
-	if _, err := p.ReadFrom(buf); err != nil {
-		return err
-	}
-
-	q := new(encoding.MPI)
-	if _, err := q.ReadFrom(buf); err != nil {
-		return err
-	}
-
-	rsaPriv.D = new(big.Int).SetBytes(d.Bytes())
-	rsaPriv.Primes = make([]*big.Int, 2)
-	rsaPriv.Primes[0] = new(big.Int).SetBytes(p.Bytes())
-	rsaPriv.Primes[1] = new(big.Int).SetBytes(q.Bytes())
-	if err := rsaPriv.Validate(); err != nil {
-		return err
-	}
-	rsaPriv.Precompute()
-	pk.PrivateKey = rsaPriv
-	pk.Encrypted = false
-	pk.encryptedData = nil
-
-	return nil
-}
-
-func (pk *PrivateKey) parseDSAPrivateKey(data []byte) (err error) {
-	dsaPub := pk.PublicKey.PublicKey.(*dsa.PublicKey)
-	dsaPriv := new(dsa.PrivateKey)
-	dsaPriv.PublicKey = *dsaPub
-
-	buf := bytes.NewBuffer(data)
-	x := new(encoding.MPI)
-	if _, err := x.ReadFrom(buf); err != nil {
-		return err
-	}
-
-	dsaPriv.X = new(big.Int).SetBytes(x.Bytes())
-	pk.PrivateKey = dsaPriv
-	pk.Encrypted = false
-	pk.encryptedData = nil
-
-	return nil
-}
-
-func (pk *PrivateKey) parseElGamalPrivateKey(data []byte) (err error) {
-	pub := pk.PublicKey.PublicKey.(*elgamal.PublicKey)
-	priv := new(elgamal.PrivateKey)
-	priv.PublicKey = *pub
-
-	buf := bytes.NewBuffer(data)
-	x := new(encoding.MPI)
-	if _, err := x.ReadFrom(buf); err != nil {
-		return err
-	}
-
-	priv.X = new(big.Int).SetBytes(x.Bytes())
-	pk.PrivateKey = priv
 	pk.Encrypted = false
 	pk.encryptedData = nil
 

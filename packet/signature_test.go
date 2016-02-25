@@ -9,6 +9,8 @@ import (
 	"crypto"
 	"encoding/hex"
 	"testing"
+
+	"github.com/benburkert/openpgp/algorithm"
 )
 
 func TestSignatureRead(t *testing.T) {
@@ -18,7 +20,7 @@ func TestSignatureRead(t *testing.T) {
 		return
 	}
 	sig, ok := packet.(*Signature)
-	if !ok || sig.SigType != SigTypeBinary || sig.PubKeyAlgo != PubKeyAlgoRSA || sig.Hash != crypto.SHA1 {
+	if !ok || sig.SigType != SigTypeBinary || sig.PubKeyAlgo != algorithm.RSA || sig.Hash != crypto.SHA1 {
 		t.Errorf("failed to parse, got: %#v", packet)
 	}
 }

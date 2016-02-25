@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"testing"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/armor"
 )
 
@@ -25,7 +26,7 @@ func TestSignatureV3Read(t *testing.T) {
 		return
 	}
 	sig, ok := packet.(*SignatureV3)
-	if !ok || sig.SigType != SigTypeGenericCert || sig.PubKeyAlgo != PubKeyAlgoRSA || sig.Hash != crypto.MD5 {
+	if !ok || sig.SigType != SigTypeGenericCert || sig.PubKeyAlgo != algorithm.RSA || sig.Hash != crypto.MD5 {
 		t.Errorf("failed to parse, got: %#v", packet)
 	}
 }

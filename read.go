@@ -111,10 +111,7 @@ ParsePackets:
 		case *packet.EncryptedKey:
 			// This packet contains the decryption key encrypted to a public key.
 			md.EncryptedToKeyIds = append(md.EncryptedToKeyIds, p.KeyId)
-			switch p.Algo {
-			case packet.PubKeyAlgoRSA, packet.PubKeyAlgoRSAEncryptOnly, packet.PubKeyAlgoElGamal:
-				break
-			default:
+			if !p.Algo.CanEncrypt() {
 				continue
 			}
 			var keys []Key
