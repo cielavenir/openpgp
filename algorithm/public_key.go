@@ -240,6 +240,21 @@ func (pk publicKey) Sign(rand io.Reader, priv crypto.PrivateKey, sigopt crypto.S
 			new(encoding.MPI).SetBig(r),
 			new(encoding.MPI).SetBig(s),
 		}, nil
+	case ECDSA:
+		ecdsaPriv, ok := priv.(*ecdsa.PrivateKey)
+		if !ok {
+			return nil, errors.InvalidArgumentError("cannot sign with wrong type of private key")
+		}
+
+		r, s, err := ecdsa.Sign(rand, ecdsaPriv, digest)
+		if err != nil {
+			return nil, err
+		}
+
+		return []encoding.Field{
+			new(encoding.MPI).SetBig(r),
+			new(encoding.MPI).SetBig(s),
+		}, nil
 	default:
 		return nil, errors.UnsupportedError("public key algorithm: " + strconv.Itoa(int(pk)))
 	}
