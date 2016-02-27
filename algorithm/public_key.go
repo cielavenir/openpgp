@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"strconv"
 
+	"github.com/benburkert/openpgp/ecdh"
 	"github.com/benburkert/openpgp/elgamal"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
@@ -536,13 +537,14 @@ func (pk publicKey) ParsePublicKey(r io.Reader) (crypto.PublicKey, []encoding.Fi
 			return nil, nil, errors.UnsupportedError("failed to parse EC point")
 		}
 
-		ecdsa := &ecdsa.PublicKey{
+		ecdh := &ecdh.PublicKey{
 			Curve: c,
 			X:     x,
 			Y:     y,
+			KDF:   kdf,
 		}
 
-		return ecdsa, []encoding.Field{oid, p, kdf}, nil
+		return ecdh, []encoding.Field{oid, p, kdf}, nil
 	default:
 		return nil, nil, errors.UnsupportedError("public key type: " + strconv.Itoa(int(pk)))
 	}
