@@ -5,7 +5,6 @@
 package packet
 
 import (
-	"crypto"
 	"crypto/dsa"
 	"crypto/rsa"
 	"crypto/sha1"
@@ -223,7 +222,7 @@ func (pk *PublicKey) VerifySignatureV3(signed hash.Hash, sig *SignatureV3) (err 
 
 // keySignatureHash returns a Hash of the message that needs to be signed for
 // pk to assert a subkey relationship to signed.
-func keySignatureHash(pk, signed signingKey, hashFunc crypto.Hash) (h hash.Hash, err error) {
+func keySignatureHash(pk, signed signingKey, hashFunc algorithm.Hash) (h hash.Hash, err error) {
 	if !hashFunc.Available() {
 		return nil, errors.UnsupportedError("hash function")
 	}
@@ -268,7 +267,7 @@ func (pk *PublicKey) VerifyKeySignature(signed *PublicKey, sig *Signature) error
 	return nil
 }
 
-func keyRevocationHash(pk signingKey, hashFunc crypto.Hash) (h hash.Hash, err error) {
+func keyRevocationHash(pk signingKey, hashFunc algorithm.Hash) (h hash.Hash, err error) {
 	if !hashFunc.Available() {
 		return nil, errors.UnsupportedError("hash function")
 	}
@@ -293,7 +292,7 @@ func (pk *PublicKey) VerifyRevocationSignature(sig *Signature) (err error) {
 
 // userIdSignatureHash returns a Hash of the message that needs to be signed
 // to assert that pk is a valid key for id.
-func userIdSignatureHash(id string, pk *PublicKey, hashFunc crypto.Hash) (h hash.Hash, err error) {
+func userIdSignatureHash(id string, pk *PublicKey, hashFunc algorithm.Hash) (h hash.Hash, err error) {
 	if !hashFunc.Available() {
 		return nil, errors.UnsupportedError("hash function")
 	}

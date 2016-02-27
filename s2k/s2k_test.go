@@ -6,7 +6,6 @@ package s2k
 
 import (
 	"bytes"
-	"crypto"
 	_ "crypto/md5"
 	"crypto/rand"
 	"crypto/sha1"
@@ -15,6 +14,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/benburkert/openpgp/algorithm"
 	_ "golang.org/x/crypto/ripemd160"
 )
 
@@ -102,8 +102,8 @@ func TestParse(t *testing.T) {
 }
 
 func TestSerialize(t *testing.T) {
-	hashes := []crypto.Hash{crypto.MD5, crypto.SHA1, crypto.RIPEMD160,
-		crypto.SHA256, crypto.SHA384, crypto.SHA512, crypto.SHA224}
+	hashes := []algorithm.Hash{algorithm.MD5, algorithm.SHA1, algorithm.RIPEMD160,
+		algorithm.SHA256, algorithm.SHA384, algorithm.SHA512, algorithm.SHA224}
 	testCounts := []int{-1, 0, 1024, 65536, 4063232, 65011712}
 	for _, h := range hashes {
 		for _, c := range testCounts {

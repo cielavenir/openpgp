@@ -5,9 +5,7 @@
 package packet
 
 import (
-	"crypto"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"strconv"
 	"time"
@@ -15,7 +13,6 @@ import (
 	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
-	"github.com/benburkert/openpgp/s2k"
 )
 
 // SignatureV3 represents older version 3 signatures. These signatures are less secure
@@ -27,7 +24,7 @@ type SignatureV3 struct {
 	CreationTime time.Time
 	IssuerKeyId  uint64
 	PubKeyAlgo   algorithm.PublicKey
-	Hash         crypto.Hash
+	Hash         algorithm.CryptoHash
 	HashTag      [2]byte
 
 	RSASignature     encoding.Field
@@ -78,7 +75,11 @@ func (sig *SignatureV3) parse(r io.Reader) (err error) {
 		return
 	}
 
-	if sig.Hash, ok = s2k.HashIdToHash(buf[1]); !ok {
+	hash, ok := algorithm.HashById[buf[1]]
+	if !ok {
+		return errors.UnsupportedError("hash function " + strconv.Itoa(int(buf[2])))
+	}
+	if sig.Hash, ok = hash.(algorithm.CryptoHash); !ok {
 		return errors.UnsupportedError("hash function " + strconv.Itoa(int(buf[2])))
 	}
 
@@ -125,11 +126,7 @@ func (sig *SignatureV3) Serialize(w io.Writer) (err error) {
 
 	// Write public key algorithm, hash ID, and hash value
 	buf[0] = byte(sig.PubKeyAlgo.Id())
-	hashId, ok := s2k.HashToHashId(sig.Hash)
-	if !ok {
-		return errors.UnsupportedError(fmt.Sprintf("hash function %v", sig.Hash))
-	}
-	buf[1] = hashId
+	buf[1] = sig.Hash.Id()
 	copy(buf[2:4], sig.HashTag[:])
 	if _, err = w.Write(buf[:4]); err != nil {
 		return

@@ -5,7 +5,6 @@
 package packet
 
 import (
-	"crypto"
 	"crypto/rand"
 	"io"
 	"time"
@@ -21,7 +20,7 @@ type Config struct {
 	Rand io.Reader
 	// DefaultHash is the default hash function to be used.
 	// If zero, SHA-256 is used.
-	DefaultHash crypto.Hash
+	DefaultHash algorithm.Hash
 	// DefaultCipher is the cipher to be used.
 	// If zero, AES-128 is used.
 	DefaultCipher algorithm.Cipher
@@ -57,9 +56,9 @@ func (c *Config) Random() io.Reader {
 	return c.Rand
 }
 
-func (c *Config) Hash() crypto.Hash {
-	if c == nil || uint(c.DefaultHash) == 0 {
-		return crypto.SHA256
+func (c *Config) Hash() algorithm.Hash {
+	if c == nil || c.DefaultHash == nil {
+		return algorithm.SHA256
 	}
 	return c.DefaultHash
 }

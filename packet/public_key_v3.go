@@ -5,7 +5,6 @@
 package packet
 
 import (
-	"crypto"
 	"crypto/md5"
 	"crypto/rsa"
 	"encoding/binary"
@@ -221,7 +220,7 @@ func (pk *PublicKeyV3) VerifySignatureV3(signed hash.Hash, sig *SignatureV3) (er
 
 	switch pk.PubKeyAlgo {
 	case algorithm.RSA, algorithm.RSASignOnly:
-		if err = rsa.VerifyPKCS1v15(pk.PublicKey, sig.Hash, hashBytes, sig.RSASignature.Bytes()); err != nil {
+		if err = rsa.VerifyPKCS1v15(pk.PublicKey, sig.Hash.Hash, hashBytes, sig.RSASignature.Bytes()); err != nil {
 			return errors.SignatureError("RSA verification failure")
 		}
 		return
@@ -254,7 +253,7 @@ func (pk *PublicKeyV3) VerifyKeySignatureV3(signed *PublicKeyV3, sig *SignatureV
 
 // userIdSignatureV3Hash returns a Hash of the message that needs to be signed
 // to assert that pk is a valid key for id.
-func userIdSignatureV3Hash(id string, pk signingKey, hfn crypto.Hash) (h hash.Hash, err error) {
+func userIdSignatureV3Hash(id string, pk signingKey, hfn algorithm.Hash) (h hash.Hash, err error) {
 	if !hfn.Available() {
 		return nil, errors.UnsupportedError("hash function")
 	}

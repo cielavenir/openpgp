@@ -6,12 +6,12 @@
 package openpgp // import "github.com/benburkert/openpgp"
 
 import (
-	"crypto"
 	_ "crypto/sha256"
 	"hash"
 	"io"
 	"strconv"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/armor"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/packet"
@@ -277,11 +277,11 @@ FindLiteralData:
 // should be preprocessed (i.e. to normalize line endings). Thus this function
 // returns two hashes. The second should be used to hash the message itself and
 // performs any needed preprocessing.
-func hashForSignature(hashId crypto.Hash, sigType packet.SignatureType) (hash.Hash, hash.Hash, error) {
-	if !hashId.Available() {
-		return nil, nil, errors.UnsupportedError("hash not available: " + strconv.Itoa(int(hashId)))
+func hashForSignature(hashAlgo algorithm.Hash, sigType packet.SignatureType) (hash.Hash, hash.Hash, error) {
+	if !hashAlgo.Available() {
+		return nil, nil, errors.UnsupportedError("hash not available: " + strconv.Itoa(int(hashAlgo.Id())))
 	}
-	h := hashId.New()
+	h := hashAlgo.New()
 
 	switch sigType {
 	case packet.SigTypeBinary:
@@ -356,7 +356,7 @@ func (scr *signatureCheckReader) Read(buf []byte) (n int, err error) {
 // ErrUnknownIssuer is returned.
 func CheckDetachedSignature(keyring KeyRing, signed, signature io.Reader) (signer *Entity, err error) {
 	var issuerKeyId uint64
-	var hashFunc crypto.Hash
+	var hashFunc algorithm.Hash
 	var sigType packet.SignatureType
 	var keys []Key
 	var p packet.Packet

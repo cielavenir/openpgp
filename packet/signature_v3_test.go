@@ -6,7 +6,6 @@ package packet
 
 import (
 	"bytes"
-	"crypto"
 	"encoding/hex"
 	"io"
 	"io/ioutil"
@@ -26,7 +25,7 @@ func TestSignatureV3Read(t *testing.T) {
 		return
 	}
 	sig, ok := packet.(*SignatureV3)
-	if !ok || sig.SigType != SigTypeGenericCert || sig.PubKeyAlgo != algorithm.RSA || sig.Hash != crypto.MD5 {
+	if !ok || sig.SigType != SigTypeGenericCert || sig.PubKeyAlgo != algorithm.RSA || sig.Hash != algorithm.MD5 {
 		t.Errorf("failed to parse, got: %#v", packet)
 	}
 }
