@@ -5,7 +5,7 @@
 package openpgp
 
 import (
-	"crypto"
+	"fmt"
 	"hash"
 	"io"
 	"strconv"
@@ -15,7 +15,6 @@ import (
 	"github.com/benburkert/openpgp/armor"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/packet"
-	"github.com/benburkert/openpgp/s2k"
 )
 
 // DetachSign signs message with the private key from signer (which must
@@ -157,14 +156,6 @@ func intersectPreferences(a []uint8, b []uint8) (intersection []uint8) {
 	return a[:j]
 }
 
-func hashToHashId(h crypto.Hash) uint8 {
-	v, ok := s2k.HashToHashId(h)
-	if !ok {
-		panic("tried to convert unknown hash")
-	}
-	return v
-}
-
 // Encrypt encrypts a message to a number of recipients and, optionally, signs
 // it. hints contains optional information, that is also encrypted, that aids
 // the recipients in processing the message. The resulting WriteCloser must
@@ -193,11 +184,11 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 		algorithm.CAST5,
 	}
 	// These are the possible hash functions that we'll use for the signature.
-	candidateHashes := []uint8{
-		hashToHashId(crypto.SHA256),
-		hashToHashId(crypto.SHA512),
-		hashToHashId(crypto.SHA1),
-		hashToHashId(crypto.RIPEMD160),
+	candidateHashes := algorithm.HashSlice{
+		algorithm.SHA256,
+		algorithm.SHA512,
+		algorithm.SHA1,
+		algorithm.RIPEMD160,
 	}
 	// In the event that a recipient doesn't specify any supported ciphers
 	// or hash functions, these are the ones that we assume that every
@@ -224,7 +215,7 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 			preferredHashes = defaultHashes
 		}
 		candidateCiphers = candidateCiphers.Intersect(preferredSymmetric)
-		candidateHashes = intersectPreferences(candidateHashes, preferredHashes)
+		candidateHashes = candidateHashes.Intersect(preferredHashes)
 	}
 
 	if len(candidateCiphers) == 0 || len(candidateHashes) == 0 {
@@ -241,9 +232,9 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 		}
 	}
 
-	var hash crypto.Hash
-	for _, hashId := range candidateHashes {
-		if h, ok := s2k.HashIdToHash(hashId); ok && h.Available() {
+	var hash algorithm.Hash
+	for _, h := range candidateHashes {
+		if h.Available() {
 			hash = h
 			break
 		}
@@ -251,19 +242,19 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 
 	// If the hash specified by config is a candidate, we'll use that.
 	if configuredHash := config.Hash(); configuredHash.Available() {
-		for _, hashId := range candidateHashes {
-			if h, ok := s2k.HashIdToHash(hashId); ok && h == configuredHash {
+		for _, h := range candidateHashes {
+			if h == configuredHash {
 				hash = h
 				break
 			}
 		}
 	}
 
-	if hash == 0 {
-		hashId := candidateHashes[0]
-		name, ok := s2k.HashIdToString(hashId)
-		if !ok {
-			name = "#" + strconv.Itoa(int(hashId))
+	if hash == nil {
+		hashId := candidateHashes[0].Id()
+		name := "#" + strconv.Itoa(int(hashId))
+		if hashAlgo, ok := algorithm.HashById[hashId].(fmt.Stringer); ok {
+			name = hashAlgo.String()
 		}
 		return nil, errors.InvalidArgumentError("cannot encrypt because no candidate hash functions are compiled in. (Wanted " + name + " in this case.)")
 	}
@@ -330,7 +321,7 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 type signatureWriter struct {
 	encryptedData io.WriteCloser
 	literalData   io.WriteCloser
-	hashType      crypto.Hash
+	hashType      algorithm.Hash
 	h             hash.Hash
 	signer        *packet.PrivateKey
 	config        *packet.Config

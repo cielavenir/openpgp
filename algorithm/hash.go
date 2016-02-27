@@ -77,3 +77,32 @@ func (h CryptoHash) String() string {
 	}
 	return s
 }
+
+// HashSlice is a slice of Hashes.
+type HashSlice []Hash
+
+// Ids returns the id of each Hash in hs.
+func (hs HashSlice) Ids() []uint8 {
+	ids := make([]uint8, len(hs))
+	for i, symmetricKey := range hs {
+		ids[i] = symmetricKey.Id()
+	}
+	return ids
+}
+
+// Intersect mutates and returns a prefix of a that contains only the values in
+// the intersection of a and b. The order of a is preserved.
+func (hs HashSlice) Intersect(b HashSlice) HashSlice {
+	var j int
+	for _, v := range hs {
+		for _, v2 := range b {
+			if v.Id() == v2.Id() {
+				hs[j] = v
+				j++
+				break
+			}
+		}
+	}
+
+	return hs[:j]
+}

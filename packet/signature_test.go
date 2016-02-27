@@ -6,11 +6,12 @@ package packet
 
 import (
 	"bytes"
-	"crypto"
 	"encoding/hex"
 	"io"
 	"testing"
 	"time"
+
+	"github.com/benburkert/openpgp/algorithm"
 )
 
 var signatureTests = []struct {
@@ -56,7 +57,7 @@ func TestSignature(t *testing.T) {
 		sig := new(Signature)
 		sig.SigType = SigTypeBinary
 		sig.PubKeyAlgo = privKey.PubKeyAlgo
-		sig.Hash = crypto.SHA256
+		sig.Hash = algorithm.SHA256
 		sig.CreationTime = time.Unix(0x56cfdedf, 0)
 		sig.IssuerKeyId = &privKey.KeyId
 
@@ -93,7 +94,7 @@ func TestSignature(t *testing.T) {
 
 		var ok bool
 		sig, ok = packet.(*Signature)
-		if !ok || sig.SigType != SigTypeBinary || sig.PubKeyAlgo != privKey.PubKeyAlgo || sig.Hash != crypto.SHA256 {
+		if !ok || sig.SigType != SigTypeBinary || sig.PubKeyAlgo != privKey.PubKeyAlgo || sig.Hash != algorithm.SHA256 {
 			t.Errorf("#%d: failed to parse, got: %#v", i, packet)
 		}
 	}

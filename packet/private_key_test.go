@@ -6,7 +6,6 @@ package packet
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -76,7 +75,7 @@ func TestPrivateKeyRead(t *testing.T) {
 	}
 }
 
-func populateHash(hashFunc crypto.Hash, msg []byte) (hash.Hash, error) {
+func populateHash(hashFunc algorithm.Hash, msg []byte) (hash.Hash, error) {
 	h := hashFunc.New()
 	if _, err := h.Write(msg); err != nil {
 		return nil, err
@@ -107,7 +106,7 @@ func TestECDSAPrivateKey(t *testing.T) {
 
 	sig := &Signature{
 		PubKeyAlgo: algorithm.ECDSA,
-		Hash:       crypto.SHA256,
+		Hash:       algorithm.SHA256,
 	}
 	msg := []byte("Hello World!")
 

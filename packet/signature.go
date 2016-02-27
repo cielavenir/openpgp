@@ -6,7 +6,6 @@ package packet
 
 import (
 	"bytes"
-	"crypto"
 	"encoding/binary"
 	"hash"
 	"io"
@@ -16,7 +15,6 @@ import (
 	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
-	"github.com/benburkert/openpgp/s2k"
 )
 
 const (
@@ -31,7 +29,7 @@ const (
 type Signature struct {
 	SigType    SignatureType
 	PubKeyAlgo algorithm.PublicKey
-	Hash       crypto.Hash
+	Hash       algorithm.Hash
 
 	// HashSuffix is extra data that is hashed in after the signed data.
 	HashSuffix []byte
@@ -48,11 +46,12 @@ type Signature struct {
 	// The following are optional so are nil when not included in the
 	// signature.
 
-	SigLifetimeSecs, KeyLifetimeSecs    *uint32
-	PreferredSymmetric                  algorithm.CipherSlice
-	PreferredHash, PreferredCompression []uint8
-	IssuerKeyId                         *uint64
-	IsPrimaryId                         *bool
+	SigLifetimeSecs, KeyLifetimeSecs *uint32
+	PreferredSymmetric               algorithm.CipherSlice
+	PreferredHash                    algorithm.HashSlice
+	PreferredCompression             []uint8
+	IssuerKeyId                      *uint64
+	IsPrimaryId                      *bool
 
 	// FlagsValid is set if any flags were given. See RFC 4880, section
 	// 5.2.3.21 for details.
@@ -100,7 +99,7 @@ func (sig *Signature) parse(r io.Reader) (err error) {
 		return errors.UnsupportedError("public key algorithm " + strconv.Itoa(int(buf[1])))
 	}
 
-	sig.Hash, ok = s2k.HashIdToHash(buf[2])
+	sig.Hash, ok = algorithm.HashById[buf[2]]
 	if !ok {
 		return errors.UnsupportedError("hash function " + strconv.Itoa(int(buf[2])))
 	}
@@ -284,8 +283,10 @@ func parseSignatureSubpacket(sig *Signature, subpacket []byte, isHashed bool) (r
 		if !isHashed {
 			return
 		}
-		sig.PreferredHash = make([]byte, len(subpacket))
-		copy(sig.PreferredHash, subpacket)
+		sig.PreferredHash = make(algorithm.HashSlice, len(subpacket))
+		for i, id := range subpacket {
+			sig.PreferredHash[i] = algorithm.HashById[id]
+		}
 	case prefCompressionSubpacket:
 		// Preferred compression algorithms, section 5.2.3.9
 		if !isHashed {
@@ -450,17 +451,12 @@ func (sig *Signature) KeyExpired(currentTime time.Time) bool {
 func (sig *Signature) buildHashSuffix() (err error) {
 	hashedSubpacketsLen := subpacketsLength(sig.outSubpackets, true)
 
-	var ok bool
 	l := 6 + hashedSubpacketsLen
 	sig.HashSuffix = make([]byte, l+6)
 	sig.HashSuffix[0] = 4
 	sig.HashSuffix[1] = uint8(sig.SigType)
 	sig.HashSuffix[2] = uint8(sig.PubKeyAlgo.Id())
-	sig.HashSuffix[3], ok = s2k.HashToHashId(sig.Hash)
-	if !ok {
-		sig.HashSuffix = nil
-		return errors.InvalidArgumentError("hash cannot be represented in OpenPGP: " + strconv.Itoa(int(sig.Hash)))
-	}
+	sig.HashSuffix[3] = sig.Hash.Id()
 	sig.HashSuffix[4] = byte(hashedSubpacketsLen >> 8)
 	sig.HashSuffix[5] = byte(hashedSubpacketsLen)
 	serializeSubpackets(sig.HashSuffix[6:l], sig.outSubpackets, true)
@@ -628,7 +624,7 @@ func (sig *Signature) buildSubpackets() (subpackets []outputSubpacket) {
 	}
 
 	if len(sig.PreferredHash) > 0 {
-		subpackets = append(subpackets, outputSubpacket{true, prefHashAlgosSubpacket, false, sig.PreferredHash})
+		subpackets = append(subpackets, outputSubpacket{true, prefHashAlgosSubpacket, false, sig.PreferredHash.Ids()})
 	}
 
 	if len(sig.PreferredCompression) > 0 {

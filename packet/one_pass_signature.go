@@ -5,21 +5,19 @@
 package packet
 
 import (
-	"crypto"
 	"encoding/binary"
 	"io"
 	"strconv"
 
 	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/errors"
-	"github.com/benburkert/openpgp/s2k"
 )
 
 // OnePassSignature represents a one-pass signature packet. See RFC 4880,
 // section 5.4.
 type OnePassSignature struct {
 	SigType    SignatureType
-	Hash       crypto.Hash
+	Hash       algorithm.Hash
 	PubKeyAlgo algorithm.PublicKey
 	KeyId      uint64
 	IsLast     bool
@@ -39,7 +37,7 @@ func (ops *OnePassSignature) parse(r io.Reader) (err error) {
 	}
 
 	var ok bool
-	ops.Hash, ok = s2k.HashIdToHash(buf[2])
+	ops.Hash, ok = algorithm.HashById[buf[2]]
 	if !ok {
 		return errors.UnsupportedError("hash function: " + strconv.Itoa(int(buf[2])))
 	}
@@ -60,11 +58,7 @@ func (ops *OnePassSignature) Serialize(w io.Writer) error {
 	var buf [13]byte
 	buf[0] = onePassSignatureVersion
 	buf[1] = uint8(ops.SigType)
-	var ok bool
-	buf[2], ok = s2k.HashToHashId(ops.Hash)
-	if !ok {
-		return errors.UnsupportedError("hash type: " + strconv.Itoa(int(ops.Hash)))
-	}
+	buf[2] = ops.Hash.Id()
 	buf[3] = uint8(ops.PubKeyAlgo.Id())
 	binary.BigEndian.PutUint64(buf[4:12], ops.KeyId)
 	if ops.IsLast {

@@ -13,11 +13,13 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
+	"fmt"
 	"hash"
 	"io"
 	"net/textproto"
 	"strconv"
 
+	"github.com/benburkert/openpgp/algorithm"
 	"github.com/benburkert/openpgp/armor"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/packet"
@@ -174,7 +176,7 @@ func Decode(data []byte) (b *Block, rest []byte) {
 type dashEscaper struct {
 	buffered *bufio.Writer
 	h        hash.Hash
-	hashType crypto.Hash
+	hashType algorithm.Hash
 
 	atBeginningOfLine bool
 	isFirstLine       bool
@@ -301,13 +303,16 @@ func Encode(w io.Writer, privateKey *packet.PrivateKey, config *packet.Config) (
 	}
 
 	hashType := config.Hash()
-	name := nameOfHash(hashType)
+	name := ""
+	if hashAlgo, ok := hashType.(fmt.Stringer); ok {
+		name = hashAlgo.String()
+	}
 	if len(name) == 0 {
-		return nil, errors.UnsupportedError("unknown hash type: " + strconv.Itoa(int(hashType)))
+		return nil, errors.UnsupportedError("unknown hash type: " + strconv.Itoa(int(hashType.Id())))
 	}
 
 	if !hashType.Available() {
-		return nil, errors.UnsupportedError("unsupported hash type: " + strconv.Itoa(int(hashType)))
+		return nil, errors.UnsupportedError("unsupported hash type: " + strconv.Itoa(int(hashType.Id())))
 	}
 	h := hashType.New()
 
