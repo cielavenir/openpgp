@@ -33,7 +33,7 @@ type PublicKey interface {
 
 	// Encrypt performs asymmetric encryption on the given message. The
 	// ciphertext of the encrypted message is returned as encoded fields.
-	Encrypt(rand io.Reader, pub crypto.PublicKey, msg []byte) ([]encoding.Field, error)
+	Encrypt(rand io.Reader, pub crypto.PublicKey, msg []byte, fingerprint [20]byte) ([]encoding.Field, error)
 
 	// Decrypt performs asymmetric decryption on the ciphertext contained in
 	// the encoded fields, returning the original message.
@@ -157,7 +157,7 @@ func (pk publicKey) CanSign() bool {
 	}
 }
 
-func (pk publicKey) Encrypt(rand io.Reader, pub crypto.PublicKey, msg []byte) ([]encoding.Field, error) {
+func (pk publicKey) Encrypt(rand io.Reader, pub crypto.PublicKey, msg []byte, fingerprint [20]byte) ([]encoding.Field, error) {
 	switch pk {
 	case RSA, RSAEncryptOnly:
 		rsapub, ok := pub.(*rsa.PublicKey)
@@ -186,7 +186,98 @@ func (pk publicKey) Encrypt(rand io.Reader, pub crypto.PublicKey, msg []byte) ([
 			new(encoding.MPI).SetBig(c1),
 			new(encoding.MPI).SetBig(c2),
 		}, nil
-	case DSA, RSASignOnly:
+	case ECDH:
+		ecdhpub, ok := pub.(*ecdh.PublicKey)
+		if !ok {
+			return nil, errors.InvalidArgumentError("cannot encrypt to wrong type of public key")
+		}
+
+		// the sender MAY use 21, 13, and 5 bytes of padding for AES-128,
+		// AES-192, and AES-256, respectively, to provide the same number of
+		// octets, 40 total, as an input to the key wrapping method.
+		padding := make([]byte, 40-len(msg))
+		for i := range padding {
+			padding[i] = byte(40 - len(msg))
+		}
+		m := append(msg, padding...)
+
+		d, x, y, err := elliptic.GenerateKey(ecdhpub.Curve, rand)
+		if err != nil {
+			return nil, err
+		}
+
+		vsG := elliptic.Marshal(ecdhpub.Curve, x, y)
+		zb, _ := ecdhpub.Curve.ScalarMult(ecdhpub.X, ecdhpub.Y, d)
+
+		var oid *encoding.BitString
+		switch ecdhpub.Curve {
+		case elliptic.P256():
+			oid = encoding.NewBitString(oidCurveP256)
+		case elliptic.P384():
+			oid = encoding.NewBitString(oidCurveP384)
+		case elliptic.P521():
+			oid = encoding.NewBitString(oidCurveP521)
+		default:
+			return nil, errors.InvalidArgumentError("cannot encrypt with an unknown curve")
+		}
+
+		// Param = curve_OID_len || curve_OID || public_key_alg_ID || 03
+		//         || 01 || KDF_hash_ID || KEK_alg_ID for AESKeyWrap
+		//         || "Anonymous Sender    " || recipient_fingerprint;
+		param := new(bytes.Buffer)
+		if _, err := oid.WriteTo(param); err != nil {
+			return nil, err
+		}
+		if _, err := param.Write([]byte{18}); err != nil {
+			return nil, err
+		}
+		if _, err := ecdhpub.KDF.WriteTo(param); err != nil {
+			return nil, err
+		}
+		if _, err := param.Write([]byte("Anonymous Sender    ")); err != nil {
+			return nil, err
+		}
+		if _, err := param.Write(fingerprint[:]); err != nil {
+			return nil, err
+		}
+		if param.Len() != 54 && param.Len() != 51 {
+			return nil, errors.InvalidArgumentError("malformed KDF Param")
+		}
+
+		kdfHash, ok := HashById[ecdhpub.KDF.Bytes()[1]]
+		if !ok {
+			return nil, errors.InvalidArgumentError("unknown KDF hash function")
+		}
+
+		// MB = Hash ( 00 || 00 || 00 || 01 || ZB || Param );
+		h := kdfHash.New()
+		if _, err := h.Write([]byte{0x0, 0x0, 0x0, 0x1}); err != nil {
+			return nil, err
+		}
+		if _, err := h.Write(zb.Bytes()); err != nil {
+			return nil, err
+		}
+		if _, err := h.Write(param.Bytes()); err != nil {
+			return nil, err
+		}
+		mb := h.Sum(nil)
+
+		kdfCipher, ok := CipherById[ecdhpub.KDF.Bytes()[2]]
+		if !ok {
+			return nil, errors.InvalidArgumentError("unknown KDF cipher")
+		}
+		z := mb[:kdfCipher.KeySize()] // return oBits leftmost bits of MB.
+
+		c, err := keywrap.Wrap(z, m)
+		if err != nil {
+			return nil, err
+		}
+
+		return []encoding.Field{
+			encoding.NewMPI(vsG),
+			encoding.NewBitString(c),
+		}, nil
+	case DSA, RSASignOnly, ECDSA:
 		return nil, errors.InvalidArgumentError("cannot encrypt to public key of type " + strconv.Itoa(int(pk.Id())))
 	}
 

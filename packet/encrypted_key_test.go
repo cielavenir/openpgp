@@ -184,6 +184,51 @@ func TestDecryptingECDHEncryptedKey(t *testing.T) {
 	}
 }
 
+func TestEncryptingECDHEncryptedKey(t *testing.T) {
+	key := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+
+	p, err := Read(readerFromHex(privKeyECDH256Hex))
+	if err != nil {
+		t.Fatalf("didn't parse a PrivateKey: %s", err)
+	}
+
+	priv, ok := p.(*PrivateKey)
+	if !ok {
+		t.Fatalf("didn't parse a PrivateKey, got %#v", p)
+	}
+
+	if err := priv.Decrypt([]byte("testing")); err != nil {
+		t.Fatalf("failed to decrypt PrivateKey: %s", err)
+	}
+	pub := &priv.PublicKey
+
+	buf := new(bytes.Buffer)
+	if err := SerializeEncryptedKey(buf, pub, algorithm.AES128, key, nil); err != nil {
+		t.Errorf("error writing encrypted key packet: %s", err)
+	}
+
+	if p, err = Read(buf); err != nil {
+		t.Errorf("error from Read: %s", err)
+		return
+	}
+	ek, ok := p.(*EncryptedKey)
+	if !ok {
+		t.Errorf("didn't parse an EncryptedKey, got %#v", p)
+		return
+	}
+
+	if err := ek.Decrypt(priv, nil); err != nil {
+		t.Fatalf("failed to decrypt EncryptedKey: %s", err)
+	}
+	if ek.Cipher.Id() != algorithm.AES128.Id() {
+		t.Errorf("unexpected EncryptedKey contents: %#v", ek)
+	}
+
+	if !bytes.Equal(key, ek.Key) {
+		t.Errorf("bad key, got %x want %x", ek.Key, key)
+	}
+}
+
 const (
 	ecdhEkKeyHex = "8267c6f6b1246af3cfcc278afabe3b55f520510fef0ff2cb5c3edd23e408a67f"
 

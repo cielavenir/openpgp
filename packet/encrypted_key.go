@@ -111,7 +111,7 @@ func SerializeEncryptedKey(w io.Writer, pub *PublicKey, cipher algorithm.Cipher,
 	keyBlock[1+len(key)] = byte(checksum >> 8)
 	keyBlock[1+len(key)+1] = byte(checksum)
 
-	keyFields, err := pub.PubKeyAlgo.Encrypt(config.Random(), pub.PublicKey, keyBlock)
+	keyFields, err := pub.PubKeyAlgo.Encrypt(config.Random(), pub.PublicKey, keyBlock, pub.Fingerprint)
 	if err != nil {
 		return err
 	}
