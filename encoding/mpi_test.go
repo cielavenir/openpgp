@@ -9,6 +9,7 @@ import (
 var mpiTests = []struct {
 	encoded   []byte
 	bytes     []byte
+	reencoded []byte
 	bitLength uint16
 	err       error
 }{
@@ -23,9 +24,16 @@ var mpiTests = []struct {
 		bitLength: 9,
 	},
 	{
-		encoded:   append([]byte{0x1, 0x0}, make([]byte, 0x20)...),
-		bytes:     make([]byte, 0x20),
+		encoded:   append([]byte{0x1, 0x0, 0xff}, make([]byte, 0x1f)...),
+		bytes:     append([]byte{0xff}, make([]byte, 0x1f)...),
 		bitLength: 0x100,
+	},
+	// https://bugs.gnupg.org/gnupg/issue1853
+	{
+		encoded:   []byte{0x0, 0x10, 0x0, 0x01},
+		bytes:     []byte{0x01},
+		reencoded: []byte{0x0, 0x8, 0x01},
+		bitLength: 8,
 	},
 	// EOF error,
 	{
@@ -54,8 +62,14 @@ func TestMPI(t *testing.T) {
 		if _, err := mpi.WriteTo(&buf); err != nil {
 			t.Errorf("#%d: WriteTo error: %s", i, err)
 		}
-		if b := buf.Bytes(); !bytes.Equal(b, test.encoded) {
-			t.Errorf("#%d: bad encoding got:%x want:%x", i, b, test.encoded)
+
+		reencoded := test.encoded
+		if test.reencoded != nil {
+			reencoded = test.reencoded
+		}
+
+		if b := buf.Bytes(); !bytes.Equal(b, reencoded) {
+			t.Errorf("#%d: bad encoding got:%x want:%x", i, b, reencoded)
 		}
 		if bl := mpi.BitLength(); bl != test.bitLength {
 			t.Errorf("#%d: bad BitLength got:%d want:%d", i, bl, test.bitLength)
