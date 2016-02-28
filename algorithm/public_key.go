@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"strconv"
 
+	"github.com/benburkert/openpgp/aes/keywrap"
 	"github.com/benburkert/openpgp/ecdh"
 	"github.com/benburkert/openpgp/elgamal"
 	"github.com/benburkert/openpgp/encoding"
@@ -36,7 +37,7 @@ type PublicKey interface {
 
 	// Decrypt performs asymmetric decryption on the ciphertext contained in
 	// the encoded fields, returning the original message.
-	Decrypt(rand io.Reader, priv crypto.PrivateKey, fields []encoding.Field) ([]byte, error)
+	Decrypt(rand io.Reader, priv crypto.PrivateKey, fields []encoding.Field, fingerprint [20]byte) ([]byte, error)
 
 	// CanSign returns true if the public key algorithm supports signatures.
 	CanSign() bool
@@ -192,7 +193,7 @@ func (pk publicKey) Encrypt(rand io.Reader, pub crypto.PublicKey, msg []byte) ([
 	return nil, errors.UnsupportedError("encrypting a key to public key of type " + strconv.Itoa(int(pk)))
 }
 
-func (pk publicKey) Decrypt(rand io.Reader, priv crypto.PrivateKey, fields []encoding.Field) ([]byte, error) {
+func (pk publicKey) Decrypt(rand io.Reader, priv crypto.PrivateKey, fields []encoding.Field, fingerprint [20]byte) ([]byte, error) {
 	switch pk {
 	case RSA, RSAEncryptOnly:
 		return rsa.DecryptPKCS1v15(rand, priv.(*rsa.PrivateKey), fields[0].Bytes())
@@ -201,6 +202,81 @@ func (pk publicKey) Decrypt(rand io.Reader, priv crypto.PrivateKey, fields []enc
 		c2 := new(big.Int).SetBytes(fields[1].Bytes())
 
 		return elgamal.Decrypt(priv.(*elgamal.PrivateKey), c1, c2)
+	case ECDH:
+		ecdhPriv, ok := priv.(*ecdh.PrivateKey)
+		if !ok {
+			return nil, errors.InvalidArgumentError("cannot decrypt with wrong type of private key")
+		}
+
+		m := fields[1].Bytes()
+		x, y := elliptic.Unmarshal(ecdhPriv.Curve, fields[0].Bytes())
+		zb, _ := ecdhPriv.Curve.ScalarMult(x, y, ecdhPriv.D)
+
+		var oid *encoding.BitString
+		switch ecdhPriv.Curve {
+		case elliptic.P256():
+			oid = encoding.NewBitString(oidCurveP256)
+		case elliptic.P384():
+			oid = encoding.NewBitString(oidCurveP384)
+		case elliptic.P521():
+			oid = encoding.NewBitString(oidCurveP521)
+		default:
+			return nil, errors.InvalidArgumentError("cannot decrypt with an unknown curve")
+		}
+
+		// Param = curve_OID_len || curve_OID || public_key_alg_ID || 03
+		//         || 01 || KDF_hash_ID || KEK_alg_ID for AESKeyWrap
+		//         || "Anonymous Sender    " || recipient_fingerprint;
+		param := new(bytes.Buffer)
+		if _, err := oid.WriteTo(param); err != nil {
+			return nil, err
+		}
+		if _, err := param.Write([]byte{18}); err != nil {
+			return nil, err
+		}
+		if _, err := ecdhPriv.KDF.WriteTo(param); err != nil {
+			return nil, err
+		}
+		if _, err := param.Write([]byte("Anonymous Sender    ")); err != nil {
+			return nil, err
+		}
+		if _, err := param.Write(fingerprint[:]); err != nil {
+			return nil, err
+		}
+		if param.Len() != 54 && param.Len() != 51 {
+			return nil, errors.InvalidArgumentError("malformed KDF Param")
+		}
+
+		kdfHash, ok := HashById[ecdhPriv.KDF.Bytes()[1]]
+		if !ok {
+			return nil, errors.InvalidArgumentError("unknown KDF hash function")
+		}
+
+		// MB = Hash ( 00 || 00 || 00 || 01 || ZB || Param );
+		h := kdfHash.New()
+		if _, err := h.Write([]byte{0x0, 0x0, 0x0, 0x1}); err != nil {
+			return nil, err
+		}
+		if _, err := h.Write(zb.Bytes()); err != nil {
+			return nil, err
+		}
+		if _, err := h.Write(param.Bytes()); err != nil {
+			return nil, err
+		}
+		mb := h.Sum(nil)
+
+		kdfCipher, ok := CipherById[ecdhPriv.KDF.Bytes()[2]]
+		if !ok {
+			return nil, errors.InvalidArgumentError("unknown KDF cipher")
+		}
+		z := mb[:kdfCipher.KeySize()] // return oBits leftmost bits of MB.
+
+		c, err := keywrap.Unwrap(z, m)
+		if err != nil {
+			return nil, err
+		}
+
+		return c[:len(c)-int(c[len(c)-1])], nil
 	default:
 		return nil, errors.InvalidArgumentError("cannot decrypted encrypted session key with private key of type " + strconv.Itoa(int(pk)))
 	}
@@ -582,6 +658,18 @@ func (pk publicKey) ParseEncryptedKey(r io.Reader) ([]encoding.Field, error) {
 		}
 
 		return []encoding.Field{mpi1, mpi2}, nil
+	case ECDH:
+		vsG := new(encoding.MPI)
+		if _, err := vsG.ReadFrom(r); err != nil {
+			return nil, err
+		}
+
+		m := new(encoding.BitString)
+		if _, err := m.ReadFrom(r); err != nil {
+			return nil, err
+		}
+
+		return []encoding.Field{vsG, m}, nil
 	default:
 		return nil, errors.UnsupportedError("public key type: " + strconv.Itoa(int(pk)))
 	}

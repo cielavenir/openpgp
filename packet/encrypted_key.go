@@ -64,7 +64,7 @@ func checksumKeyMaterial(key []byte) uint16 {
 func (e *EncryptedKey) Decrypt(priv *PrivateKey, config *Config) error {
 	// TODO(agl): use session key decryption routines here to avoid
 	// padding oracle attacks.
-	b, err := priv.PubKeyAlgo.Decrypt(config.Random(), priv.PrivateKey, e.fields)
+	b, err := priv.PubKeyAlgo.Decrypt(config.Random(), priv.PrivateKey, e.fields, priv.Fingerprint)
 	if err != nil {
 		return err
 	}
