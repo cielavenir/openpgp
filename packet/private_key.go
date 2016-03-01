@@ -29,7 +29,7 @@ type PrivateKey struct {
 	Encrypted     bool // if true then the private key is unavailable until Decrypt has been called.
 	encryptedData []byte
 	cipher        algorithm.Cipher
-	s2k           func(out, in []byte)
+	s2k           s2k.S2K
 	PrivateKey    interface{} // An *rsa.PrivateKey or *dsa.PrivateKey.
 	sha1Checksum  bool
 	iv            []byte
@@ -185,7 +185,9 @@ func (pk *PrivateKey) Decrypt(passphrase []byte) error {
 	}
 
 	key := make([]byte, pk.cipher.KeySize())
-	pk.s2k(key, passphrase)
+	if err := pk.s2k.Convert(key, passphrase); err != nil {
+		return err
+	}
 	block := pk.cipher.New(key)
 	cfb := cipher.NewCFBDecrypter(block, pk.iv)
 
