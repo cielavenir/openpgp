@@ -647,6 +647,22 @@ func (pk publicKey) SerializePrivateKey(w io.Writer, priv crypto.PrivateKey) err
 
 		_, err := new(encoding.MPI).SetBig(egPriv.X).WriteTo(w)
 		return err
+	case ECDSA:
+		ecdsaPriv, ok := priv.(*ecdsa.PrivateKey)
+		if !ok {
+			return errors.InvalidArgumentError("cannot serialize wrong type of private key")
+		}
+
+		_, err := new(encoding.MPI).SetBig(ecdsaPriv.D).WriteTo(w)
+		return err
+	case ECDH:
+		ecdhPriv, ok := priv.(*ecdh.PrivateKey)
+		if !ok {
+			return errors.InvalidArgumentError("cannot serialize wrong type of private key")
+		}
+
+		_, err := encoding.NewMPI(ecdhPriv.D).WriteTo(w)
+		return err
 	default:
 		return errors.InvalidArgumentError("unknown private key type")
 	}
