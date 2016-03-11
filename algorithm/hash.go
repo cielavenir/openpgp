@@ -2,12 +2,13 @@ package algorithm
 
 import (
 	"crypto"
+	"fmt"
 	"hash"
 )
 
 // Hash is an official hash function algorithm. See RFC 4880, section 9.4.
 type Hash interface {
-	// ID returns the algorithm Id, as a byte, of Hash.
+	// Id returns the algorithm ID, as a byte, of Hash.
 	Id() uint8
 	// Available reports whether the given hash function is linked into the binary.
 	Available() bool
@@ -22,6 +23,7 @@ type Hash interface {
 	Size() int
 }
 
+// The following vars mirror the crypto/Hash supported hash functions.
 var (
 	MD5       = CryptoHash{1, crypto.MD5}
 	SHA1      = CryptoHash{2, crypto.SHA1}
@@ -53,28 +55,25 @@ type CryptoHash struct {
 	crypto.Hash
 }
 
-// ID returns the algorithm Id, as a byte, of CryptoHash.
+// Id returns the algorithm ID, as a byte, of CryptoHash.
 func (h CryptoHash) Id() uint8 {
 	return h.id
 }
 
+var hashNames = map[uint8]string{
+	MD5.Id():       "MD5",
+	SHA1.Id():      "SHA1",
+	RIPEMD160.Id(): "RIPEMD160",
+	SHA256.Id():    "SHA256",
+	SHA384.Id():    "SHA384",
+	SHA512.Id():    "SHA512",
+	SHA224.Id():    "SHA224",
+}
+
 func (h CryptoHash) String() string {
-	switch h.id {
-	case 1:
-		return "MD5"
-	case 2:
-		return "SHA1"
-	case 3:
-		return "RIPEMD160"
-	case 8:
-		return "SHA256"
-	case 9:
-		return "SHA384"
-	case 10:
-		return "SHA512"
-	case 11:
-		return "SHA224"
-	default:
-		panic("unreachable")
+	s, ok := hashNames[h.id]
+	if !ok {
+		panic(fmt.Sprintf("Unsupported hash function %d", h.id))
 	}
+	return s
 }

@@ -22,7 +22,7 @@ import (
 // PublicKey represents the different public key system specified for OpenPGP.
 // See http://www.iana.org/assignments/pgp-parameters/pgp-parameters.xhtml#pgp-parameters-12
 type PublicKey interface {
-	// ID returns the algorithm Id, as a byte, of publickey.
+	// Id returns the algorithm ID, as a byte, of publickey.
 	Id() uint8
 
 	// BitLength is the size in bits of the public key data.
@@ -71,6 +71,8 @@ type PublicKey interface {
 	SerializePrivateKey(w io.Writer, priv crypto.PrivateKey) error
 }
 
+// The following constants mirror the OpenPGP standard (RFC 4880), as
+// well as several GnuPG extensions to the standard.
 const (
 	RSA            = publicKey(1)
 	RSAEncryptOnly = publicKey(2)
@@ -96,11 +98,11 @@ var PublicKeyById = map[uint8]PublicKey{
 
 var (
 	// NIST curve P-256
-	oidCurveP256 []byte = []byte{0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
+	oidCurveP256 = []byte{0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07}
 	// NIST curve P-384
-	oidCurveP384 []byte = []byte{0x2B, 0x81, 0x04, 0x00, 0x22}
+	oidCurveP384 = []byte{0x2B, 0x81, 0x04, 0x00, 0x22}
 	// NIST curve P-521
-	oidCurveP521 []byte = []byte{0x2B, 0x81, 0x04, 0x00, 0x23}
+	oidCurveP521 = []byte{0x2B, 0x81, 0x04, 0x00, 0x23}
 )
 
 type publicKey uint8

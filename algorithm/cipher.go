@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/des"
+	"fmt"
 
 	"golang.org/x/crypto/cast5"
 )
@@ -11,16 +12,17 @@ import (
 // Cipher is an official symmetric key cipher algorithm. See RFC 4880,
 // section 9.2.
 type Cipher interface {
-	// ID returns the algorithm Id, as a byte, of cipher.
+	// Id returns the algorithm ID, as a byte, of the cipher.
 	Id() uint8
-	// KeySize returns the key size, in bytes, of cipher.
+	// KeySize returns the key size, in bytes, of the cipher.
 	KeySize() int
-	// BlockSize returns the block size, in bytes, of cipher.
+	// BlockSize returns the block size, in bytes, of the cipher.
 	BlockSize() int
 	// New returns a fresh instance of the given cipher.
 	New(key []byte) cipher.Block
 }
 
+// The following constants mirror the OpenPGP standard (RFC 4880).
 const (
 	TripleDES = symmetricKey(2)
 	CAST5     = symmetricKey(3)
@@ -46,34 +48,38 @@ func (sk symmetricKey) Id() uint8 {
 	return uint8(sk)
 }
 
+var keySizeByID = map[uint8]int{
+	TripleDES.Id(): 24,
+	CAST5.Id():     cast5.KeySize,
+	AES128.Id():    16,
+	AES192.Id():    24,
+	AES256.Id():    32,
+}
+
 // KeySize returns the key size, in bytes, of cipher.
 func (sk symmetricKey) KeySize() int {
-	switch sk {
-	case TripleDES:
-		return 24
-	case CAST5:
-		return cast5.KeySize
-	case AES128:
-		return 16
-	case AES192:
-		return 24
-	case AES256:
-		return 32
+	ks, ok := keySizeByID[sk.Id()]
+	if !ok {
+		panic(fmt.Sprintf("Unsupported symmetric key %d", sk.Id()))
 	}
-	return 0
+	return ks
+}
+
+var blockSizeByID = map[uint8]int{
+	TripleDES.Id(): des.BlockSize,
+	CAST5.Id():     cast5.BlockSize,
+	AES128.Id():    aes.BlockSize,
+	AES192.Id():    aes.BlockSize,
+	AES256.Id():    aes.BlockSize,
 }
 
 // BlockSize returns the block size, in bytes, of cipher.
 func (sk symmetricKey) BlockSize() int {
-	switch sk {
-	case TripleDES:
-		return des.BlockSize
-	case CAST5:
-		return 8
-	case AES128, AES192, AES256:
-		return 16
+	bs, ok := blockSizeByID[sk.Id()]
+	if !ok {
+		panic(fmt.Sprintf("Unsupported symmetric key %d", sk.Id()))
 	}
-	return 0
+	return bs
 }
 
 // New returns a fresh instance of the given cipher.
@@ -103,17 +109,17 @@ func (cs CipherSlice) Ids() []uint8 {
 
 // Intersect mutates and returns a prefix of a that contains only the values in
 // the intersection of a and b. The order of a is preserved.
-func (a CipherSlice) Intersect(b CipherSlice) CipherSlice {
+func (cs CipherSlice) Intersect(b CipherSlice) CipherSlice {
 	var j int
-	for _, v := range a {
+	for _, v := range cs {
 		for _, v2 := range b {
 			if v.Id() == v2.Id() {
-				a[j] = v
+				cs[j] = v
 				j++
 				break
 			}
 		}
 	}
 
-	return a[:j]
+	return cs[:j]
 }
