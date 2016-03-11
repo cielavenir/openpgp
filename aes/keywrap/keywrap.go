@@ -28,19 +28,35 @@ import (
 	"crypto/aes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 )
 
-// Wrap a key using the AES Key Wrap Algorithm
-//   See: RFC 3394
+var (
+	// ErrWrapPlaintext is returned if the plaintext is not a multiple
+	// of 64 bits.
+	ErrWrapPlaintext = errors.New("keywrap: plainText must be a multiple of 64 bits")
+
+	// ErrUnwrapCiphertext is returned if the ciphertext is not a
+	// multiple of 64 bits.
+	ErrUnwrapCiphertext = errors.New("keywrap: cipherText must by a multiple of 64 bits")
+
+	// ErrUnwrapFailed is returned if unwrapping a key fails.
+	ErrUnwrapFailed = errors.New("keywrap: failed to unwrap key")
+
+	// NB: the AES NewCipher call only fails if the key is an invalid length.
+
+	// ErrInvalidKey is returned when the AES key is invalid.
+	ErrInvalidKey = errors.New("keywrap: invalid AES key")
+)
+
+// Wrap a key using the RFC 3394 AES Key Wrap Algorithm.
 func Wrap(key, plainText []byte) ([]byte, error) {
 	if len(plainText)%8 != 0 {
-		return nil, errors.New("plainText must be a multiple of 64 bits")
+		return nil, ErrWrapPlaintext
 	}
 
 	c, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create an AES cipher: %v", err)
+		return nil, ErrInvalidKey
 	}
 
 	nblocks := len(plainText) / 8
@@ -81,16 +97,15 @@ func Wrap(key, plainText []byte) ([]byte, error) {
 	return append(block[:8], intermediate...), nil
 }
 
-// Unwrap a key using the AES Key Wrap Algorithm
-//   See: RFC 3394
+// Unwrap a key using the RFC 3394 AES Key Wrap Algorithm.
 func Unwrap(key, cipherText []byte) ([]byte, error) {
 	if len(cipherText)%8 != 0 {
-		return nil, errors.New("cipherText must by a multiple of 64 bits")
+		return nil, ErrUnwrapCiphertext
 	}
 
 	c, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create an AES cipher: %v", err)
+		return nil, ErrInvalidKey
 	}
 
 	nblocks := len(cipherText)/8 - 1
@@ -126,7 +141,7 @@ func Unwrap(key, cipherText []byte) ([]byte, error) {
 	// - If A is an appropriate initial value (see 2.2.3),
 	for ii := 0; ii < 8; ii++ {
 		if block[ii] != 0xA6 {
-			return nil, errors.New("Failed to unwrap key")
+			return nil, ErrUnwrapFailed
 		}
 	}
 

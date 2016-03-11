@@ -37,11 +37,11 @@ func TestWrap(t *testing.T) {
 
 	wrappedKey, err := Wrap(sharedKey, key)
 	if err != nil {
-		t.Fatal("Wrap: ", err)
+		t.Fatal("keywrap: failed to Wrap key: ", err)
 	}
 
 	if !bytes.Equal(expectedWrappedKey, wrappedKey) {
-		t.Fatalf("Unexpected wrapped key:\n\t%v\n\t%v", expectedWrappedKey, wrappedKey)
+		t.Fatalf("unwrap: unexpected wrapped key:\n\t%v\n\t%v", expectedWrappedKey, wrappedKey)
 	}
 }
 
@@ -53,10 +53,55 @@ func TestUnwrap(t *testing.T) {
 
 	key, err := Unwrap(sharedKey, wrappedKey)
 	if err != nil {
-		t.Fatal("Unwrap: ", err)
+		t.Fatal("keywrap: failed to unwrap key: ", err)
 	}
 
 	if !bytes.Equal(expectedKey, key) {
-		t.Fatalf("Unexpected wrapped key:\n\t%v\n\t%v", expectedKey, key)
+		t.Fatalf("keywrap: unexpected wrapped key:\n\t%v\n\t%v", expectedKey, key)
 	}
+}
+
+// Test wrap error cases.
+func TestWrapError(t *testing.T) {
+	plaintext := make([]byte, 7)
+	key := make([]byte, 32)
+	_, err := Wrap(key, plaintext)
+	if err != ErrWrapPlaintext {
+		t.Fatalf("keywrap: expected Wrap to fail with %v, but have err=%v", ErrWrapPlaintext, err)
+	}
+
+	plaintext = append(plaintext, byte(0))
+	_, err = Wrap(key[:31], plaintext)
+	if err != ErrInvalidKey {
+		t.Fatalf("keywrap: expected Wrap to fail with %v, but have err=%v", ErrInvalidKey, err)
+	}
+}
+
+// Test unwrap error cases.
+func TestUnwrapError(t *testing.T) {
+	key := []byte{64, 154, 239, 170, 64, 40, 195, 99, 19, 84, 192, 142, 192, 238, 207, 217}
+	sharedKey := []byte{25, 172, 32, 130, 225, 114, 26, 181, 138, 106, 254, 192, 95, 133, 74, 82}
+	wrapped, err := Wrap(key, sharedKey)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	l := len(wrapped)
+	_, err = Unwrap(key, wrapped[:l-2])
+	if err != ErrUnwrapCiphertext {
+		t.Fatalf("keywrap: expected Unwrap to fail with %v, but have err=%v", ErrUnwrapCiphertext, err)
+	}
+
+	l = len(key)
+	_, err = Unwrap(key[:l-2], wrapped)
+	if err != ErrInvalidKey {
+		t.Fatalf("keywrap: expected Unwrap to fail with %v, but have err=%v", ErrInvalidKey, err)
+	}
+
+	wrapped[0]--
+	_, err = Unwrap(key, wrapped)
+	if err != ErrUnwrapFailed {
+		t.Fatalf("keywrap: expected Unwrap to fail with %v, but have err=%v", ErrUnwrapFailed, err)
+	}
+
 }
