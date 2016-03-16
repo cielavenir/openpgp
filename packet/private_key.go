@@ -100,7 +100,7 @@ func (pk *PrivateKey) parse(r io.Reader) (err error) {
 		if blockSize == 0 {
 			return errors.UnsupportedError("unsupported cipher in private key: " + strconv.Itoa(int(pk.cipher.Id())))
 		}
-		pk.iv = make([]byte, blockSize)
+		pk.iv, err = pk.s2k.SetupIV(blockSize)
 		_, err = readFull(r, pk.iv)
 		if err != nil {
 			return
@@ -134,12 +134,25 @@ func (pk *PrivateKey) Serialize(w io.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	buf.WriteByte(0 /* no encryption */)
+
+	if pk.s2k != nil {
+		s2ktype := 0xff
+		if pk.sha1Checksum {
+			s2ktype = 0xfe
+		}
+
+		buf.WriteByte(byte(s2ktype))
+		pk.s2k.WriteTo(buf)
+	} else {
+		buf.WriteByte(0 /* no encryption */)
+	}
 
 	privateKeyBuf := bytes.NewBuffer(nil)
-	err = pk.PublicKey.PubKeyAlgo.SerializePrivateKey(privateKeyBuf, pk.PrivateKey)
-	if err != nil {
-		return
+	if pk.PrivateKey != nil {
+		err = pk.PublicKey.PubKeyAlgo.SerializePrivateKey(privateKeyBuf, pk.PrivateKey)
+		if err != nil {
+			return
+		}
 	}
 
 	ptype := packetTypePrivateKey
