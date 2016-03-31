@@ -157,9 +157,11 @@ func (pk *PrivateKey) Serialize(w io.Writer) (err error) {
 	}
 
 	privateKeyBuf := bytes.NewBuffer(nil)
-	err = pk.PublicKey.PubKeyAlgo.SerializePrivateKey(privateKeyBuf, pk.PrivateKey)
-	if err != nil {
-		return
+	if pk.PrivateKey != nil {
+		err = pk.PublicKey.PubKeyAlgo.SerializePrivateKey(privateKeyBuf, pk.PrivateKey)
+		if err != nil {
+			return
+		}
 	}
 
 	ptype := packetTypePrivateKey
