@@ -74,7 +74,7 @@ func (e *EncryptedKey) Decrypt(priv *PrivateKey, config *Config) error {
 		return errors.UnsupportedError("unknown cipher: " + strconv.Itoa(int(b[0])))
 	}
 
-	e.Key = b[1 : len(b)-2]
+	e.Key = b[1: len(b)-2]
 	expectedChecksum := uint16(b[len(b)-2])<<8 | uint16(b[len(b)-1])
 	checksum := checksumKeyMaterial(e.Key)
 	if checksum != expectedChecksum {
@@ -86,7 +86,7 @@ func (e *EncryptedKey) Decrypt(priv *PrivateKey, config *Config) error {
 
 // Serialize writes the encrypted key packet, e, to w.
 func (e *EncryptedKey) Serialize(w io.Writer) error {
-	serializeHeader(w, packetTypeEncryptedKey, 1 /* version */ +8 /* key id */ +1 /* algo */ +encodedLength(e.fields))
+	serializeHeader(w, packetTypeEncryptedKey, 1/* version */ +8/* key id */ +1/* algo */ +encodedLength(e.fields))
 
 	w.Write([]byte{encryptedKeyVersion})
 	binary.Write(w, binary.BigEndian, e.KeyId)
@@ -98,13 +98,17 @@ func (e *EncryptedKey) Serialize(w io.Writer) error {
 // SerializeEncryptedKey serializes an encrypted key packet to w that contains
 // key, encrypted to pub.
 // If config is nil, sensible defaults will be used.
-func SerializeEncryptedKey(w io.Writer, pub *PublicKey, cipher algorithm.Cipher, key []byte, config *Config) error {
+func SerializeEncryptedKey(w io.Writer, pub *PublicKey, hidden bool, cipher algorithm.Cipher, key []byte, config *Config) error {
 	var buf [10]byte
 	buf[0] = encryptedKeyVersion
-	binary.BigEndian.PutUint64(buf[1:9], pub.KeyId)
+	if hidden {
+		binary.BigEndian.PutUint64(buf[1:9], 0)
+	} else {
+		binary.BigEndian.PutUint64(buf[1:9], pub.KeyId)
+	}
 	buf[9] = byte(pub.PubKeyAlgo.Id())
 
-	keyBlock := make([]byte, 1 /* cipher type */ +len(key)+2 /* checksum */)
+	keyBlock := make([]byte, 1/* cipher type */ +len(key)+2 /* checksum */)
 	keyBlock[0] = byte(cipher.Id())
 	copy(keyBlock[1:], key)
 	checksum := checksumKeyMaterial(key)

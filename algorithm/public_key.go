@@ -144,7 +144,7 @@ func (pk publicKey) BitLength(pub crypto.PublicKey) (uint16, error) {
 
 func (pk publicKey) CanEncrypt() bool {
 	switch pk {
-	case RSA, RSAEncryptOnly, ElGamal:
+	case RSA, RSAEncryptOnly, ElGamal, ECDH:
 		return true
 	default:
 		return false
@@ -890,6 +890,26 @@ func (pk publicKey) Encode(pub crypto.PublicKey) []encoding.Field {
 		return []encoding.Field{
 			encoding.NewBitString(oid),
 			encoding.NewMPI(elliptic.Marshal(ecdsapub.Curve, ecdsapub.X, ecdsapub.Y)),
+		}
+	case ECDH:
+		ecdhpub := pub.(*ecdh.PublicKey)
+
+		var oid []byte
+		switch ecdhpub.Curve {
+		case elliptic.P256():
+			oid = oidCurveP256
+		case elliptic.P384():
+			oid = oidCurveP384
+		case elliptic.P521():
+			oid = oidCurveP521
+		default:
+			panic("unknown elliptic curve")
+		}
+
+		return []encoding.Field{
+			encoding.NewBitString(oid),
+			encoding.NewMPI(elliptic.Marshal(ecdhpub.Curve, ecdhpub.X, ecdhpub.Y)),
+			ecdhpub.KDF,
 		}
 	default:
 		panic("unreachable")

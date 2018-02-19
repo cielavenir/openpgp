@@ -20,6 +20,7 @@ import (
 	"github.com/benburkert/openpgp/elgamal"
 	"github.com/benburkert/openpgp/errors"
 	"github.com/benburkert/openpgp/s2k"
+	"github.com/benburkert/openpgp/ecdh"
 )
 
 // PrivateKey represents a possibly encrypted private key. See RFC 4880,
@@ -59,6 +60,13 @@ func NewElGamalPrivateKey(currentTime time.Time, priv *elgamal.PrivateKey) *Priv
 func NewECDSAPrivateKey(currentTime time.Time, priv *ecdsa.PrivateKey) *PrivateKey {
 	pk := new(PrivateKey)
 	pk.PublicKey = *NewECDSAPublicKey(currentTime, &priv.PublicKey)
+	pk.PrivateKey = priv
+	return pk
+}
+
+func NewECDHPrivateKey(currentTime time.Time, priv *ecdh.PrivateKey) *PrivateKey {
+	pk := new(PrivateKey)
+	pk.PublicKey = *NewECDHPublicKey(currentTime, &priv.PublicKey)
 	pk.PrivateKey = priv
 	return pk
 }

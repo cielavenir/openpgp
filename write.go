@@ -161,7 +161,7 @@ func intersectPreferences(a []uint8, b []uint8) (intersection []uint8) {
 // the recipients in processing the message. The resulting WriteCloser must
 // be closed after the contents of the file have been written.
 // If config is nil, sensible defaults will be used.
-func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHints, config *packet.Config) (plaintext io.WriteCloser, err error) {
+func Encrypt(ciphertext io.Writer, to []*Entity, hidden bool, signed *Entity, hints *FileHints, config *packet.Config) (plaintext io.WriteCloser, err error) {
 	var signer *packet.PrivateKey
 	if signed != nil {
 		signKey, ok := signed.signingKey(config.Now())
@@ -265,7 +265,7 @@ func Encrypt(ciphertext io.Writer, to []*Entity, signed *Entity, hints *FileHint
 	}
 
 	for _, key := range encryptKeys {
-		if err := packet.SerializeEncryptedKey(ciphertext, key.PublicKey, algo, symKey, config); err != nil {
+		if err := packet.SerializeEncryptedKey(ciphertext, key.PublicKey, hidden, algo, symKey, config); err != nil {
 			return nil, err
 		}
 	}

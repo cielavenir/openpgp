@@ -22,6 +22,7 @@ import (
 	"github.com/benburkert/openpgp/elgamal"
 	"github.com/benburkert/openpgp/encoding"
 	"github.com/benburkert/openpgp/errors"
+	"github.com/benburkert/openpgp/ecdh"
 )
 
 // PublicKey represents an OpenPGP public key. See RFC 4880, section 5.5.2.
@@ -88,6 +89,19 @@ func NewECDSAPublicKey(creationTime time.Time, pub *ecdsa.PublicKey) *PublicKey 
 		PubKeyAlgo:   algorithm.ECDSA,
 		PublicKey:    pub,
 		fields:       algorithm.ECDSA.Encode(pub),
+	}
+
+	pk.setFingerPrintAndKeyId()
+	return pk
+}
+
+// NewECDHPublicKey returns a PublicKey that wraps the given ecdh.PublicKey.
+func NewECDHPublicKey(creationTime time.Time, pub *ecdh.PublicKey) *PublicKey {
+	pk := &PublicKey{
+		CreationTime: creationTime,
+		PubKeyAlgo:   algorithm.ECDH,
+		PublicKey:    pub,
+		fields:       algorithm.ECDH.Encode(pub),
 	}
 
 	pk.setFingerPrintAndKeyId()
